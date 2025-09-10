@@ -1,10 +1,9 @@
 import numpy as np
 
 class ObstacleCourse:
-    def __init__(self, n:int , m: int, num_obstacles: int, min_dim: int = 10, obstacle_size: int = 2):
+    def __init__(self, n: int, m: int, num_obstacles: int, min_dim: int = 10, obstacle_size: int = 2):
         """
-        Initialize the obstacle course.
-        
+        Initialize a continuous obstacle course with c x c square obstacles.
         Args:
             n (int): Width of the course
             m (int): Height of the course
@@ -14,50 +13,83 @@ class ObstacleCourse:
         """
         if n < min_dim or m < min_dim:
             raise ValueError(f"Course dimensions must be at least {min_dim}x{min_dim}")
-        
         if obstacle_size >= min(n, m):
             raise ValueError(f"Obstacle size {obstacle_size} is too large for course dimensions {n}x{m}")
-        
         self.width = n
         self.height = m
         self.obstacle_size = obstacle_size
         self.num_obstacles = num_obstacles
-        self.grid = np.zeros((m, n), dtype=int)  # 0 represents free space, 1 represents obstacle
-        
-        # Initialize start and goal positions
+        self.obstacles = []  # List of (x, y, c) tuples, (bottom-left corner, size)
         self.start = None
         self.goal = None
-        
+
     def generate_obstacles(self):
-        """Generate random obstacles in the course."""
+        """Generate random c x c obstacles as (x, y, c) tuples (bottom-left corner, size)."""
         obstacles_placed = 0
-        max_attempts = 1e3  # Prevent infinite loop
+        max_attempts = 1000
         attempts = 0
-        
         while obstacles_placed < self.num_obstacles and attempts < max_attempts:
-            # Generate random position for obstacle's top-left corner
             x = np.random.randint(0, self.width - self.obstacle_size + 1)
             y = np.random.randint(0, self.height - self.obstacle_size + 1)
-            
-            # Check if space is free
             if not self._check_overlap(x, y):
-                # Place obstacle
-                self.grid[y:y+self.obstacle_size, x:x+self.obstacle_size] = 1
+                self.obstacles.append((x, y, self.obstacle_size))
                 obstacles_placed += 1
-            
             attempts += 1
-            
         if obstacles_placed < self.num_obstacles:
             print(f"Warning: Could only place {obstacles_placed} obstacles out of {self.num_obstacles} requested")
-    
+
     def _check_overlap(self, x: int, y: int) -> bool:
+        """Check if a new c x c block at (x, y) would overlap with any existing obstacle."""
+        c = self.obstacle_size
+        for ox, oy, oc in self.obstacles:
+            # Check for rectangle overlap
+            if (x < ox + oc and x + c > ox and y < oy + oc and y + c > oy):
+                return True
+        return False
+
+    def sample_free_point(self):
+        """Sample a random integer point not inside any obstacle."""
+        max_attempts = 1000
+        for _ in range(max_attempts):
+            x = np.random.randint(0, self.width)
+            y = np.random.randint(0, self.height)
+            if not self.point_in_obstacle(x, y):
+                return (x, y)
+        raise RuntimeError("Could not sample a free point after many attempts.")
+
+    def point_in_obstacle(self, x: int, y: int) -> bool:
+        """Return True if (x, y) is inside any obstacle."""
+        for ox, oy, c in self.obstacles:
+            if ox <= x < ox + c and oy <= y < oy + c:
+                return True
+        return False
+
+    def set_start_and_goal(self, corner_box_size: int = 8):
         """
-        Check if placing an obstacle at (x,y) would overlap with existing obstacles.
-        
-        Returns:
-            bool: True if there's an overlap, False otherwise
+        Set start and goal points randomly within a small region near the corners, not exactly at the corners, and not inside any obstacle.
+        corner_box_size (int): Size of the square region from each corner to sample start/goal.
         """
-        return np.any(self.grid[y:y+self.obstacle_size, x:x+self.obstacle_size] == 1)
+        # Define corner regions
+        regions = [
+            (0, 0, corner_box_size, corner_box_size),  # bottom-left
+            (self.width - corner_box_size, 0, self.width, corner_box_size),  # bottom-right
+            (0, self.height - corner_box_size, corner_box_size, self.height),  # top-left
+            (self.width - corner_box_size, self.height - corner_box_size, self.width, self.height)  # top-right
+        ]
+        # Sample start in one region, goal in another (not the same)
+        max_attempts = 1000
+        for _ in range(max_attempts):
+            start_region = regions[0]
+            goal_region = regions[-1]
+            sx = np.random.randint(start_region[0], start_region[2])
+            sy = np.random.randint(start_region[1], start_region[3])
+            gx = np.random.randint(goal_region[0], goal_region[2])
+            gy = np.random.randint(goal_region[1], goal_region[3])
+            if not self.point_in_obstacle(sx, sy) and not self.point_in_obstacle(gx, gy) and (sx, sy) != (gx, gy):
+                self.start = (sx, sy)
+                self.goal = (gx, gy)
+                return
+        raise RuntimeError("Could not find free start and goal points near corners.")
     
     def get_grid(self) -> np.ndarray:
         """Return the course grid."""
