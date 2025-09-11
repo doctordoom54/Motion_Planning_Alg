@@ -1,5 +1,5 @@
 import numpy as np
-
+print("Loaded rrt_star.py")
 class Node:
     def __init__(self, position, parent=None):
         self.position = position  # (x, y)
@@ -7,7 +7,7 @@ class Node:
         self.cost = 0.0
 
 class RRTStar:
-    def __init__(self, start, goal, obstacle_list, map_bounds, step_size=1.0, goal_sample_rate=0.1, max_iter=500):
+    def __init__(self, start, goal, obstacle_list, map_bounds, step_size=10.0, goal_sample_rate=0.1, max_iter=500):
         self.start = Node(start)
         self.goal = Node(goal)
         self.obstacle_list = obstacle_list
@@ -18,36 +18,56 @@ class RRTStar:
         self.node_list = [self.start]
 
     def plan(self):
-        """Main planning loop for RRT*"""
-        for _ in range(self.max_iter):
+        """Main planning loop for RRT* (with explicit goal connection)."""
+        goal_reached = False
+        print("Starting RRT* planning...")
+        for i in range(self.max_iter):
             rnd_point = self.sample()
             nearest_node = self.get_nearest_node(rnd_point)
             new_node = self.steer(nearest_node, rnd_point)
+            dist_to_nearest = np.linalg.norm(np.array(nearest_node.position) - np.array(rnd_point))
+            print(f"Iteration {i}: Sampled {rnd_point}, Nearest {nearest_node.position}, Distance {dist_to_nearest:.2f}, New {None if new_node is None else new_node.position}")
+            if new_node is not None:
+                print(f"  Steer step: from {nearest_node.position} to {new_node.position}, step_size={self.step_size}")
             if new_node is None:
                 continue
             if not self.collision_path(nearest_node, new_node):
                 near_nodes = self.find_near_nodes(new_node)
                 self.choose_parent(new_node, near_nodes)
                 self.node_list.append(new_node)
+                print(f"  Added node at {new_node.position}, total nodes: {len(self.node_list)}")
                 self.rewire(new_node, near_nodes)
-        return self.get_final_path()
+                # Try to connect to goal if close enough and collision-free
+                dist_to_goal = np.linalg.norm(np.array(new_node.position) - np.array(self.goal.position))
+                print(f"  Distance to goal: {dist_to_goal:.2f}")
+                if dist_to_goal <= self.step_size:
+                    temp_goal = Node(self.goal.position, parent=new_node)
+                    temp_goal.cost = new_node.cost + dist_to_goal
+                    if not self.collision_path(new_node, temp_goal):
+                        self.node_list.append(temp_goal)
+                        print(f"Goal reached at iteration {i}")
+                        break
+        return self.get_final_path()    
 
     def sample(self):
-        """Sample a random point in the map (with goal biasing)"""
-        x, y = self.start.position
-        u, v = self.goal.position
+        """Sample a random point in the map (mostly uniform, sometimes near goal)."""
         xmin, xmax, ymin, ymax = self.map_bounds
-        while True:
-            if np.random.rand() < self.goal_sample_rate:
-                center = np.array([u, v])  # Bias toward goal
-            else:
-                center = np.array([x, y])
-            point = np.random.normal(center, 2.0)
+        if np.random.rand() < self.goal_sample_rate:
+            # With small probability, sample near the goal (not exactly at goal)
+            goal = np.array(self.goal.position)
+            point = goal + np.random.normal(0, self.step_size, size=2)
             point[0] = np.clip(point[0], xmin, xmax)
             point[1] = np.clip(point[1], ymin, ymax)
-            if any(np.allclose(node.position, point) for node in self.node_list):
-                continue
-            return tuple(point)
+        else:
+            # Uniform random sample in the map bounds
+            point = np.array([
+                np.random.uniform(xmin, xmax),
+                np.random.uniform(ymin, ymax)
+            ])
+        # Avoid duplicate points
+        if any(np.allclose(node.position, point) for node in self.node_list):
+            return self.sample()
+        return tuple(point)
 
     def get_nearest_node(self, point):
         """Find the nearest node in the tree to the sampled point"""
