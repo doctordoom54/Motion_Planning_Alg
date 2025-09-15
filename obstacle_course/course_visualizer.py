@@ -39,7 +39,7 @@ class CourseVisualizer:
     # self.ax.set_xticks(np.arange(0, width+1, 1))
     # self.ax.set_yticks(np.arange(0, height+1, 1))
     # Removed grid lines for a continuous look
-    def __init__(self, figsize: Tuple[int, int] = (8, 6)):
+    def __init__(self, figsize):
         """
         Initialize the course visualizer.
         

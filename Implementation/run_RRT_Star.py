@@ -1,8 +1,6 @@
-#viz(250, 250, 20, 15)
 print("Starting run_RRT_Star.py")
 import sys
 import os
-import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from obstacle_course.generate_course import ObstacleCourse
 from obstacle_course.course_visualizer import CourseVisualizer
@@ -16,8 +14,8 @@ def main():
     height = 500
     num_obstacles = 35
     obstacle_size = 25
-    step_size = 10.0
-    max_iter = 3000
+    step_size = 5.0
+    max_iter = 5000
 
     # Generate course
     course = ObstacleCourse(n=width, m=height, num_obstacles=num_obstacles, obstacle_size=obstacle_size)
@@ -54,7 +52,7 @@ def main():
         if node.parent is not None:
             x_vals = [node.position[0], node.parent.position[0]]
             y_vals = [node.position[1], node.parent.position[1]]
-            visualizer.ax.plot(x_vals, y_vals, color='gray', linewidth=0.7, alpha=0.7)
+            visualizer.ax.plot(x_vals, y_vals, color='red', linewidth=0.7, alpha=0.7)
 
     # Draw the path if found
     if path and len(path) > 1:

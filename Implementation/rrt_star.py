@@ -16,7 +16,7 @@ class RRTStar:
         self.goal_sample_rate = goal_sample_rate
         self.max_iter = max_iter
         self.node_list = [self.start]
-
+#main planning loop
     def plan(self):
         """Main planning loop for RRT* (with explicit goal connection)."""
         goal_reached = False

@@ -38,7 +38,7 @@ class ObstacleCourse:
         if obstacles_placed < self.num_obstacles:
             print(f"Warning: Could only place {obstacles_placed} obstacles out of {self.num_obstacles} requested")
 
-    def _check_overlap(self, x: int, y: int) -> bool:
+    def _check_overlap(self, x, y) -> bool:
         """Check if a new c x c block at (x, y) would overlap with any existing obstacle."""
         c = self.obstacle_size
         for ox, oy, oc in self.obstacles:
@@ -80,7 +80,7 @@ class ObstacleCourse:
         max_attempts = 1000
         for _ in range(max_attempts):
             start_region = regions[0]
-            goal_region = regions[-1]
+            goal_region = regions[3]
             sx = np.random.randint(start_region[0], start_region[2])
             sy = np.random.randint(start_region[1], start_region[3])
             gx = np.random.randint(goal_region[0], goal_region[2])
@@ -89,13 +89,13 @@ class ObstacleCourse:
                 self.start = (sx, sy)
                 self.goal = (gx, gy)
                 return
-        raise RuntimeError("Could not find free start and goal points near corners.")
+        raise RuntimeError("Could not find free start and goal points near corners in the give time, run the code again.")
     
     def get_grid(self) -> np.ndarray:
         """Return the course grid."""
         return self.grid.copy()
     
-    def generate_start_goal(self, margin: int = 2):
+   # def generate_start_goal(self, margin: int = 2):
         """
         Generate start and goal points.
         Start point will be in the bottom-left corner region.
@@ -127,7 +127,7 @@ class ObstacleCourse:
                 self.goal = (goal_x, goal_y)
                 break
     
-    def _check_point_collision(self, x: int, y: int) -> bool:
+    #def _check_point_collision(self, x: int, y: int) -> bool:
         """
         Check if a point collides with any obstacle.
         
@@ -140,7 +140,7 @@ class ObstacleCourse:
         """
         return self.grid[y, x] == 1
     
-    def get_start_goal(self) -> tuple:
+   # def get_start_goal(self) -> tuple:
         """
         Get the start and goal positions.
         
