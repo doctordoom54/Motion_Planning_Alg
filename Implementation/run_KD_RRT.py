@@ -16,7 +16,7 @@ def main():
     Example usage of the Kinodynamic RRT planner.
     """
     # Create obstacle course
-    course = ObstacleCourse(100,200, 18, obstacle_size=15)
+    course = ObstacleCourse(100,200, 18, obstacle_size=15) #this course will be passed to KD_RRT
     course.generate_obstacles()
     course.set_start_and_goal()
     
@@ -26,7 +26,7 @@ def main():
     
     # Set initial velocity and acceleration
     start_vel = [-0.35, -1.0]  # Start from rest
-    start_acc = [1.0, 0.0]  # No initial acceleration
+    start_acc = [1.0, -1.0]  # No initial acceleration
     
     print(f"Start: {start_pos}, Goal: {goal_pos}")
     
@@ -44,6 +44,11 @@ def main():
     
     # output planned path 
     path = planner.plan()
+    if path is not None:
+        print(f"Planner returned path: {path[2].position, path[2].velocity, path[2].acceleration}")
+        total_cost = path[-1].cost
+        print(f"Total path cost: {total_cost}")
+
     
     if path:
         print(f"Path found with {len(path)} nodes")

@@ -94,26 +94,18 @@ class KinodynamicRRT:
         ])
         
         # Bias velocity sampling toward lower speeds for better reachability
-        if np.random.random() < 0.7:  # 70% bias toward lower speeds
+        if np.random.random() < 0.5:  # 70% bias toward lower speeds
             vel_mag = np.random.exponential(self.max_velocity * 0.2)
             vel_mag = min(vel_mag, self.max_velocity)
         else:
             vel_mag = np.random.uniform(0, self.max_velocity)
-        
+        #direction of velocity 
         vel_angle = np.random.uniform(0, 2 * np.pi)
         vel = vel_mag * np.array([np.cos(vel_angle), np.sin(vel_angle)])
         
-        # Bias acceleration toward lower values
-        if np.random.random() < 0.8:  # 80% bias toward lower accelerations
-            acc_mag = np.random.exponential(self.max_acceleration * 0.3)
-            acc_mag = min(acc_mag, self.max_acceleration)
-        else:
-            acc_mag = np.random.uniform(0, self.max_acceleration)
         
-        acc_angle = np.random.uniform(0, 2 * np.pi)
-        acc = acc_mag * np.array([np.cos(acc_angle), np.sin(acc_angle)])
         
-        return pos, vel, acc
+        return pos, vel
     
     def find_nearest_node(self, target_pos, target_vel=None):
         """
@@ -136,12 +128,12 @@ class KinodynamicRRT:
             if target_vel is not None:
                 vel_dist = np.linalg.norm(node.velocity - target_vel)
                 # Weight position more heavily than velocity
-                total_cost = pos_dist + 0.1 * vel_dist
+                total_cost = pos_dist + 0.2 * vel_dist #selection of weight?
             else:
                 total_cost = pos_dist
             
             if total_cost < min_cost:
-                min_cost = total_cost
+                min_cost = total_cost 
                 nearest_node = node
                 
         return nearest_node
@@ -161,7 +153,7 @@ class KinodynamicRRT:
         # Limit control acceleration
         acc_mag = np.linalg.norm(control_acc)
         if acc_mag > self.max_acceleration:
-            control_acc = control_acc * (self.max_acceleration / acc_mag)
+            control_acc = control_acc * (self.max_acceleration / acc_mag) #make the control acceleration within limit
         
         # First-order integration: v = v0 + a*dt, x = x0 + v*dt
         new_velocity = node.velocity + control_acc * time_step
@@ -169,20 +161,21 @@ class KinodynamicRRT:
         # Limit velocity
         vel_mag = np.linalg.norm(new_velocity)
         if vel_mag > self.max_velocity:
-            new_velocity = new_velocity * (self.max_velocity / vel_mag)
+            new_velocity = new_velocity * (self.max_velocity / vel_mag) #limit the velocity within max limit
         
         new_position = node.position + new_velocity * time_step
-        new_acceleration = control_acc
+        new_acceleration = control_acc #new acceleration at the node
         
         return new_position, new_velocity, new_acceleration
     
     def steer_to_goal_with_stop(self, from_node, target_pos):
         """
         Steer toward goal while trying to achieve zero velocity at the target.
-        
+        this method is only called every 10th iteration to try to reach to goal directly from
+        the current point in the tree
         Args:
             from_node (KNode): Starting node
-            target_pos (np.array): Target position
+            target_pos (np.array): Target position, also a node
             
         Returns:
             KNode or None: New node if steering is successful, None otherwise
@@ -199,15 +192,15 @@ class KinodynamicRRT:
         # Calculate required deceleration to stop at goal
         # Using kinematic equation: v^2 = u^2 + 2*a*s
         # For final velocity = 0: a = -u^2 / (2*s)
-        vel_toward_goal = np.dot(current_vel, direction_unit)
+        vel_toward_goal = np.dot(current_vel, direction_unit) # compoenent of velocity in the direction of goal for the state
         
         if distance > 0.1 and vel_toward_goal > 0:
             # Calculate deceleration needed to stop at goal
-            required_decel = -(vel_toward_goal ** 2) / (2 * distance)
-            desired_acc = direction_unit * max(required_decel, -self.max_acceleration)
+            required_decel = -(vel_toward_goal ** 2) / (2 * distance) #acceleration based on velocity and distance
+            desired_acc = direction_unit * max(required_decel, -self.max_acceleration) #update decelration can be different than acceleration
         else:
             # Close to goal or moving away, gentle approach
-            desired_acc = direction_unit * self.max_acceleration * 0.2
+            desired_acc = direction_unit * self.max_acceleration * 0.3 #parameter taken randomly again
         
         # Integrate dynamics
         new_pos, new_vel, new_acc = self.integrate_dynamics(
@@ -220,7 +213,7 @@ class KinodynamicRRT:
             return None
         
         new_node = KNode(new_pos, new_vel, new_acc, parent=from_node)
-        new_node.cost = from_node.cost + np.linalg.norm(new_pos - from_node.position)
+        new_node.cost = from_node.cost + np.linalg.norm(new_pos - from_node.position) #new cost is just based on position mag
         
         return new_node
     
@@ -262,7 +255,7 @@ class KinodynamicRRT:
             damping_factor = max(0.3, 1.0 - np.linalg.norm(vel_component_perpendicular) / self.max_velocity)
             desired_acc = direction_unit * self.max_acceleration * damping_factor
         
-        # Integrate dynamics with adaptive step size
+        # Integrate dynamics with adaptive step size this gives a physical set of state
         new_pos, new_vel, new_acc = self.integrate_dynamics(
             from_node, desired_acc, adaptive_step
         )
@@ -296,7 +289,7 @@ class KinodynamicRRT:
             point = from_pos + t * (to_pos - from_pos)
             
             # Check if point is in obstacle
-            if self.course.point_in_obstacle(int(point[0]), int(point[1])):
+            if self.course.point_in_obstacle(int(point[0]), int(point[1])): #taking this method from course object 
                 return False
                 
         return True
@@ -344,18 +337,20 @@ class KinodynamicRRT:
             # Every 10th iteration, try to connect directly to goal
             if iteration % 10 == 0:
                 rand_pos = self.goal_pos
-                rand_vel = np.array([0.0, 0.0])  # Assume zero target velocity at goal
+                rand_vel = np.array([0.0, 0.0])  # zero target velocity at goal
             else:
                 # Sample random state
-                rand_pos, rand_vel, rand_acc = self.sample_random_state()
+                rand_pos, rand_vel = self.sample_random_state()
             
             # Find nearest node (considering velocity when available)
             if iteration % 10 == 0:
-                nearest_node = self.find_nearest_node(rand_pos, rand_vel)
+                nearest_node = self.find_nearest_node(rand_pos, rand_vel) 
+                #when this is called, the rand vel is zero for find nearest node
+                #kind of confusing to name the variable same when they are only triggered as a group
             else:
                 nearest_node = self.find_nearest_node(rand_pos, rand_vel)
             
-            # Steer towards random position (or goal with special handling)
+            # Steer towards random position (or goal with for every 10 itereations or try at least)
             if iteration % 10 == 0:  # Goal-directed iteration
                 new_node = self.steer_to_goal_with_stop(nearest_node, rand_pos)
             else:
@@ -364,7 +359,8 @@ class KinodynamicRRT:
             if new_node is None:
                 continue
             
-            # Check collision
+            # Check collision, this will fail for most of the times early on when
+            #the algorithm is trying to reach the goal which is far away from the current state
             if not self.check_collision(nearest_node.position, new_node.position):
                 continue
             
@@ -415,7 +411,7 @@ class KinodynamicRRT:
         path = []
         current = self.goal_node
         
-        while current is not None:
+        while current is not None: #just run backwards from goal to start
             path.append(current)
             current = current.parent
         
