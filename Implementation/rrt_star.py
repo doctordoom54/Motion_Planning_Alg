@@ -118,7 +118,7 @@ class RRTStar:
     def find_near_nodes(self, new_node):
         """Find nearby nodes for possible rewiring (within a radius)."""
         n = len(self.node_list) + 1
-        r = min(50.0 * np.sqrt((np.log(n) / n)), self.step_size * 5)  # radius heuristic
+        r = min(50.0 * np.sqrt((np.log(n) / n)), self.step_size * 5)  # radius size based on a  heuristic
         dists = [np.linalg.norm(np.array(node.position) - np.array(new_node.position)) for node in self.node_list]
         near_nodes = [self.node_list[i] for i, d in enumerate(dists) if d <= r]
         return near_nodes

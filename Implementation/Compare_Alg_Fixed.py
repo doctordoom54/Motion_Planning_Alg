@@ -15,7 +15,7 @@ def main():
     Compare Kinodynamic RRT and RRT* algorithms on the same obstacle course.
     """
     # Create obstacle course (same for both algorithms)
-    course = ObstacleCourse(100, 200, 18, obstacle_size=15)
+    course = ObstacleCourse(200, 200, 20, obstacle_size=18)
     course.generate_obstacles()
     course.set_start_and_goal()
     
@@ -61,7 +61,7 @@ def main():
         goal=goal_pos,    # Use same goal position
         obstacle_list=course.obstacles,
         map_bounds=map_bounds,
-        step_size=5.0,
+        step_size=4.0,
         goal_sample_rate=0.5,
         max_iter=5000
     )

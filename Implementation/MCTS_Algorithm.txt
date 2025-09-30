@@ -1,0 +1,72 @@
+Required parameters : 
+dt:float = 1.0, vmax: float = 30.0, amax: float = 15.0, amin: float = 15.0, 
+max_iterations: int = 5000, rollout_horizon: int = 20, 
+goal_tolerance: float = 2.0, uct_c: float = 1.4, widen_k: float = 2.0,
+widen_alpha: float = 0.5, direct_connect_radius: float = 10.0,
+collision_step: float = 0.5, goal_bias_expand: float = 0.6,
+goal_bias_rollout: float = 0.8, goal_accel_scale: float = 1.0,
+rollout_progress_weight: float = 0.5:
+
+Planner algorithm :
+
+for range of max iterations
+
+
+if can connect root to goal directly. (unlikely but checking)
+    finalize connect to goal directly 
+
+selection algorithm:
+
+while the current node is not terminal node
+start with root node --> current node:
+    if can connect to terminate directly:
+        if yes  : connect to goal
+    
+    if current node has children <= max children:
+        return current node (because we need to expand this node before going to its children)
+
+    else:
+        current node is the best child with maximum UCT score. 
+        return current node
+    
+    
+    if max children is reached:
+        current node --> best child with highest UCT score
+
+if current node has children <= max children of the node:
+    expand the current node (the expansion algorithm is going down)
+
+if child is not none:
+    do a random rollout 
+    backpropogate the reward and visit to parents and all parent upstream
+
+if max iteration exceeded:
+    extract path and return the path
+
+Expand algorithm
+    for iter < max iterations:
+        sample an action (acceleration value) --> ax,ay value TODO review action sampling
+        integrate current state to the next child state with this action : v_new = v_old + a * dt ; x_new = x_old + v_old * dt + 0.5 * a * dt^2
+            if child is in course bound and no collision between current node and child:
+                add child to the tree
+
+Rollout algorithm 
+    for range of rollout horizon:
+        sample an action ax ay pair
+        integrate the current state to next state, check all bounds
+        if next state is colliding, or out of bounds:
+            return total reward
+
+        check distance norm from goal:
+        total reward --> add progress reward to total reward  
+
+
+
+
+
+
+
+
+
+    
+

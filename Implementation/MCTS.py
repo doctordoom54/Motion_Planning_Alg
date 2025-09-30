@@ -1,590 +1,409 @@
 import numpy as np
-import sys
-import os
 import math
 import random
 from typing import List, Optional, Tuple
+from obstacle_course.generate_course import ObstacleCourse
 
-# Add parent directory to path to import obstacle course
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from obstacle_course.course_visualizer import CourseVisualizer
 
 class MCTSNode:
-    """
-    Node for Monte Carlo Tree Search.
-    Each node represents a state (position) in the 2D space.
-    """
-    def __init__(self, position: Tuple[float, float], parent=None, action=None):
-        """
-        Initialize MCTS node.
-        
-        Args:
-            position (tuple): (x, y) position in 2D space
-            parent (MCTSNode): Parent node in the tree
-            action (tuple): Action taken to reach this node from parent
-        """
-        self.position = np.array(position, dtype=float)
+    def __init__(self, position: Tuple[float, float], velocity: Tuple[float, float], 
+                 acceleration: Tuple[float, float], parent=None, action=None):
+        self.position = np.array(position)
+        self.velocity = np.array(velocity)
+        self.acceleration = np.array(acceleration)
         self.parent = parent
-        self.action = action  # Action that led to this state
-        
-        # MCTS statistics
+        self.action = action
+        self.children = []
         self.visits = 0
         self.total_reward = 0.0
-        self.children = []
-        self.untried_actions = []  # Will be set by MCTS when needed
-        
-    def get_possible_actions(self, goal_pos: np.ndarray = None) -> List[Tuple[float, float]]:
-        """
-        Get all possible actions from current position.
-        Actions are movement directions with fixed step size.
-        
-        Args:
-            goal_pos (np.ndarray): Goal position for goal-biased action
-        
-        Returns:
-            List of action tuples (dx, dy)
-        """
-        step_size = 3.0  # Reduced step size for better navigation
-        actions = []
-        
-        # 8-directional movement (N, NE, E, SE, S, SW, W, NW)
-        for angle in np.linspace(0, 2*np.pi, 8, endpoint=False):
-            dx = step_size * np.cos(angle)
-            dy = step_size * np.sin(angle)
-            actions.append((dx, dy))
-        
-        # Add smaller step actions for better local navigation
-        small_step = 1.0
-        for angle in np.linspace(0, 2*np.pi, 8, endpoint=False):
-            dx = small_step * np.cos(angle)
-            dy = small_step * np.sin(angle)
-            actions.append((dx, dy))
-        
-        # Add goal-biased action if goal is provided and close enough
-        if goal_pos is not None:
-            goal_direction = goal_pos - self.position
-            goal_distance = np.linalg.norm(goal_direction)
-            
-            if goal_distance > 0:
-                # If goal is within step size, add direct action to goal
-                if goal_distance <= step_size * 1.5:
-                    actions.append((goal_direction[0], goal_direction[1]))
-                else:
-                    # Add action towards goal with fixed step size
-                    goal_unit = goal_direction / goal_distance
-                    goal_action = goal_unit * step_size
-                    actions.append((goal_action[0], goal_action[1]))
-            
-        return actions
-    
-    def is_fully_expanded(self) -> bool:
-        """Check if all possible actions have been tried."""
-        # If untried_actions hasn't been initialized yet, it's not expanded
-        if not hasattr(self, 'untried_actions'):
-            return False
-        return len(self.untried_actions) == 0 and len(self.children) > 0
-    
-    def is_terminal(self, goal_pos: np.ndarray, goal_tolerance: float) -> bool:
-        """
-        Check if this node represents a terminal state (goal reached).
-        
-        Args:
-            goal_pos (np.ndarray): Goal position
-            goal_tolerance (float): Distance tolerance to goal
-            
-        Returns:
-            bool: True if goal is reached
-        """
-        return np.linalg.norm(self.position - goal_pos) <= goal_tolerance
-    
-    def ucb1_value(self, exploration_param: float = 1.414) -> float:
-        """
-        Calculate UCB1 (Upper Confidence Bound) value for node selection.
-        
-        Args:
-            exploration_param (float): Exploration parameter (sqrt(2) is theoretical optimum)
-            
-        Returns:
-            float: UCB1 value
-        """
+        self.is_terminal = False
+
+    def ucb_value(self, exploration_constant: float = 1.41) -> float:
+        """Calculate UCB value for node selection"""
         if self.visits == 0:
-            return float('inf')  # Unvisited nodes have highest priority
-        
-        if self.parent is None:
-            return self.total_reward / self.visits
+            return float('inf')
         
         exploitation = self.total_reward / self.visits
-        exploration = exploration_param * math.sqrt(math.log(self.parent.visits) / self.visits)
-        
+        exploration = exploration_constant * math.sqrt(math.log(self.parent.visits) / self.visits)
         return exploitation + exploration
 
+    def add_child(self, child_node):
+        """Add a child node"""
+        child_node.parent = self
+        self.children.append(child_node)
 
-class MCTS:
-    """
-    Monte Carlo Tree Search implementation for 2D navigation.
-    """
-    def __init__(self, start_pos: Tuple[float, float], goal_pos: Tuple[float, float], 
-                 course, max_iterations: int = 1000, exploration_param: float = 1.414):
-        """
-        Initialize MCTS planner.
+    def update(self, reward: float):
+        """Update node statistics"""
+        self.visits += 1
+        self.total_reward += reward
+
+    def is_expandable(self, max_children: int) -> bool:
+        """Check if node has reached maximum children"""
+        return len(self.children) <= max_children
+
+
+class MCTSPlanner:
+    def __init__(self, course: ObstacleCourse, start_pos: Tuple[float, float], 
+                 goal_pos: Tuple[float, float], start_vel: Tuple[float, float] = (0.0, 0.0), 
+                 start_acc: Tuple[float, float] = (0.0, 0.0), dt: float = 1.0, 
+                 vmax: float = 30.0, amax: float = 15.0, amin: float = 15.0, 
+                 max_iterations: int = 5000, rollout_horizon: int = 20, 
+                 goal_tolerance: float = 2.0, uct_c: float = 1.4, widen_k: float = 2.0,
+                 widen_alpha: float = 0.5, direct_connect_radius: float = 10.0,
+                  goal_bias_expand: float = 0.6,
+                 goal_bias_rollout: float = 0.8, goal_accel_scale: float = 1.0,
+                 ):
         
-        Args:
-            start_pos (tuple): Starting position (x, y)
-            goal_pos (tuple): Goal position (x, y)
-            course: ObstacleCourse object for collision checking
-            max_iterations (int): Maximum MCTS iterations
-            exploration_param (float): UCB1 exploration parameter
-        """
-        self.start_pos = np.array(start_pos, dtype=float)
-        self.goal_pos = np.array(goal_pos, dtype=float)
         self.course = course
+        self.start_pos = np.array(start_pos)
+        self.start_vel = np.array(start_vel)
+        self.start_acc = np.array(start_acc)
+        self.goal_pos = np.array(goal_pos)
+        self.dt = dt
+        self.vmax = vmax
+        self.amax = amax
+        self.amin = -amin  # Make negative for lower bound
         self.max_iterations = max_iterations
-        self.exploration_param = exploration_param
-        self.goal_tolerance = 5.0  # Distance tolerance to reach goal
+        self.rollout_horizon = rollout_horizon
+        self.goal_tolerance = goal_tolerance
         
-        # Initialize root node
-        self.root = MCTSNode(start_pos)
+        # Progressive widening parameters
+        self.k = widen_k
+        self.alpha = widen_alpha
         
-    def select(self, node: MCTSNode) -> MCTSNode:
-        """
-        Selection phase: Select a leaf node using UCB1.
+        # UCT parameter
+        self.uct_c = uct_c
         
-        Args:
-            node (MCTSNode): Current node to start selection from
+        # Reward structure
+        self.reward_goal = 1000
+        self.reward_collision = -1000
+        self.reward_progress = 10
+        
+        # Direct connection parameters
+        self.direct_connect_radius = direct_connect_radius
+        
+        # Goal bias parameters (stored but not fully implemented in this basic version)
+        self.goal_bias_expand = goal_bias_expand
+        self.goal_bias_rollout = goal_bias_rollout
+        
+        # Root node
+        self.root = MCTSNode(start_pos, start_vel, start_acc)
+        self.best_goal_node = None
+
+    def plan(self) -> Optional[List[Tuple[float, float]]]:
+        """Main MCTS planning loop"""
+        for _ in range(self.max_iterations):
+            # Check terminal condition - direct connect if close to goal
+            if self._can_direct_connect(self.root):
+                return self._finalize_direct_connect(self.root)
             
-        Returns:
-            MCTSNode: Selected leaf node
-        """
-        while not node.is_terminal(self.goal_pos, self.goal_tolerance) and node.is_fully_expanded():
-            # Check if node has children before selecting
-            if not node.children:
-                break
-                
-            # Select child with highest UCB1 value
-            node = max(node.children, key=lambda child: child.ucb1_value(self.exploration_param))
-        
-        return node
-    
-    def expand(self, node: MCTSNode) -> Optional[MCTSNode]:
-        """
-        Expansion phase: Add a new child node for an untried action.
-        
-        Args:
-            node (MCTSNode): Node to expand
+            # 1. Selection phase - traverse tree to find a node to expand
+            leaf = self._select(self.root)
             
-        Returns:
-            MCTSNode or None: New child node if expansion successful, None otherwise
-        """
-        if node.is_terminal(self.goal_pos, self.goal_tolerance):
-            return None
-        
-        # Initialize untried actions if not done yet
-        if not hasattr(node, 'untried_actions'):
-            node.untried_actions = node.get_possible_actions(self.goal_pos)
-        
-        if not node.untried_actions:
-            return None
-        
-        # Bias towards goal-directed action if available
-        goal_direction = self.goal_pos - node.position
-        goal_distance = np.linalg.norm(goal_direction)
-        
-        # Check if there's a goal-biased action in untried actions
-        goal_biased_action = None
-        if goal_distance > 0:
-            for action in node.untried_actions:
-                action_vec = np.array(action)
-                # Check if this action points towards goal
-                if np.dot(action_vec, goal_direction) > 0.7 * np.linalg.norm(action_vec) * goal_distance:
-                    goal_biased_action = action
-                    break
-        
-        # Select action (bias towards goal if available)
-        if goal_biased_action is not None and random.random() < 0.6:  # 60% chance to pick goal-biased action
-            action = goal_biased_action
-        else:
-            action = random.choice(node.untried_actions)
-        
-        node.untried_actions.remove(action)
-        
-        # Calculate new position
-        new_position = node.position + np.array(action)
-        
-        # Check bounds
-        if (new_position[0] < 0 or new_position[0] >= self.course.width or
-            new_position[1] < 0 or new_position[1] >= self.course.height):
-            return None
-        
-        # Check collision
-        if not self.is_collision_free(node.position, new_position):
-            return None
-        
-        # Create new child node
-        child = MCTSNode(new_position, parent=node, action=action)
-        node.children.append(child)
-        
-        return child
-    
-    def simulate(self, node: MCTSNode) -> float:
-        """
-        Simulation phase: Run goal-biased rollout from given node to estimate value.
-        
-        Args:
-            node (MCTSNode): Node to start simulation from
+            # Check terminal condition from selected leaf
+            if self._can_direct_connect(leaf):
+                return self._finalize_direct_connect(leaf)
             
-        Returns:
-            float: Estimated reward/value
-        """
-        current_pos = node.position.copy()
-        max_simulation_steps = 50
-        step_size = 3.0  # Match the reduced step size
-        
-        for step in range(max_simulation_steps):
-            # Check if goal is reached
-            distance_to_goal = np.linalg.norm(current_pos - self.goal_pos)
-            if distance_to_goal <= self.goal_tolerance:
-                # Goal reached - high reward based on how quickly we got there
-                steps_reward = (max_simulation_steps - step) * 2.0
-                distance_reward = (200.0 - np.linalg.norm(node.position - self.goal_pos)) * 0.5
-                return 200.0 + steps_reward + distance_reward
-            
-            # Goal-biased action selection (80% towards goal, 20% random)
-            if random.random() < 0.8:
-                # Move towards goal
-                goal_direction = self.goal_pos - current_pos
-                goal_distance = np.linalg.norm(goal_direction)
-                
-                if goal_distance > 0:
-                    if goal_distance <= step_size:
-                        # Can reach goal directly
-                        action = goal_direction
-                    else:
-                        # Move towards goal with step size
-                        goal_unit = goal_direction / goal_distance
-                        action = goal_unit * step_size
-                else:
-                    # At goal position
-                    break
-            else:
-                # Random action
-                angle = random.uniform(0, 2 * np.pi)
-                action = np.array([step_size * np.cos(angle), step_size * np.sin(angle)])
-            
-            new_pos = current_pos + action
-            
-            # Check bounds
-            if (new_pos[0] < 0 or new_pos[0] >= self.course.width or
-                new_pos[1] < 0 or new_pos[1] >= self.course.height):
-                break
-            
-            # Check collision
-            if not self.is_collision_free(current_pos, new_pos):
-                break
-            
-            current_pos = new_pos
-        
-        # Simulation ended without reaching goal - reward based on final distance to goal
-        final_distance = np.linalg.norm(current_pos - self.goal_pos)
-        initial_distance = np.linalg.norm(node.position - self.goal_pos)
-        
-        # Reward improvement in distance to goal
-        distance_improvement = initial_distance - final_distance
-        base_reward = max(0, distance_improvement * 10.0)  # Reward for getting closer
-        
-        # Additional reward based on how close we got
-        max_distance = np.sqrt(self.course.width**2 + self.course.height**2)
-        proximity_reward = max(0, (max_distance - final_distance) / max_distance * 50.0)
-        
-        return base_reward + proximity_reward
-    
-    def backpropagate(self, node: MCTSNode, reward: float):
-        """
-        Backpropagation phase: Update statistics of all nodes in path to root.
-        
-        Args:
-            node (MCTSNode): Node to start backpropagation from
-            reward (float): Reward to propagate
-        """
-        while node is not None:
-            node.visits += 1
-            node.total_reward += reward
-            node = node.parent
-    
-    def is_collision_free(self, from_pos: np.ndarray, to_pos: np.ndarray) -> bool:
-        """
-        Check if the path from from_pos to to_pos is collision-free.
-        
-        Args:
-            from_pos (np.ndarray): Starting position
-            to_pos (np.ndarray): Ending position
-            
-        Returns:
-            bool: True if collision-free, False otherwise
-        """
-        # Sample points along the line
-        distance = np.linalg.norm(to_pos - from_pos)
-        num_samples = max(5, int(distance * 2))  # More samples for better collision detection
-        
-        for i in range(num_samples + 1):
-            t = i / num_samples if num_samples > 0 else 0
-            point = from_pos + t * (to_pos - from_pos)
-            
-            # Ensure point is within bounds before checking obstacle
-            if (point[0] < 0 or point[0] >= self.course.width or
-                point[1] < 0 or point[1] >= self.course.height):
-                return False
-            
-            # Check if point is in obstacle - handle floating point coordinates properly
-            x_int = int(round(point[0]))
-            y_int = int(round(point[1]))
-            
-            # Make sure rounded coordinates are still in bounds
-            if (x_int < 0 or x_int >= self.course.width or
-                y_int < 0 or y_int >= self.course.height):
-                return False
-                
-            if self.course.point_in_obstacle(x_int, y_int):
-                return False
-                
-        return True
-    
-    def search(self) -> Optional[MCTSNode]:
-        """
-        Main MCTS search algorithm.
-        
-        Returns:
-            MCTSNode or None: Best leaf node found, None if no solution
-        """
-        print(f"Starting MCTS search with {self.max_iterations} iterations...")
-        
-        successful_expansions = 0
-        failed_expansions = 0
-        
-        for iteration in range(self.max_iterations):
-            if iteration % 100 == 0:
-                print(f"MCTS Iteration {iteration}/{self.max_iterations}, Successful expansions: {successful_expansions}, Failed: {failed_expansions}")
-            
-            # 1. Selection
-            leaf = self.select(self.root)
-            
-            # 2. Expansion
-            if not leaf.is_terminal(self.goal_pos, self.goal_tolerance):
-                child = self.expand(leaf)
+            # 2. Expansion phase - add new child if not fully expanded
+            max_children = self._progressive_widening_limit(leaf)
+            if leaf.is_expandable(max_children):
+                child = self._expand(leaf)
                 if child is not None:
-                    leaf = child
-                    successful_expansions += 1
+                    # 3. Rollout phase - one random rollout from new child
+                    reward = self._rollout(child)
+                    # 4. Backpropagation phase - update path to root
+                    self._backpropagate(child, reward)
                 else:
-                    failed_expansions += 1
-            
-            # 3. Simulation
-            reward = self.simulate(leaf)
-            
-            # 4. Backpropagation
-            self.backpropagate(leaf, reward)
-            
-            # Check if goal reached in tree
-            if leaf.is_terminal(self.goal_pos, self.goal_tolerance):
-                print(f"Goal reached in MCTS tree at iteration {iteration}!")
-                return leaf
-            
-            # Also check if we're very close and can connect directly
-            if iteration % 50 == 0:  # Check every 50 iterations
-                best_node = self.find_closest_node_to_goal()
-                if best_node and np.linalg.norm(best_node.position - self.goal_pos) <= self.goal_tolerance * 2:
-                    # Try to connect directly to goal
-                    if self.is_collision_free(best_node.position, self.goal_pos):
-                        # Create goal node
-                        goal_node = MCTSNode(self.goal_pos, parent=best_node, 
-                                           action=self.goal_pos - best_node.position)
-                        best_node.children.append(goal_node)
-                        print(f"Direct connection to goal established at iteration {iteration}!")
-                        return goal_node
+                    # Failed to expand, give small penalty
+                    self._backpropagate(leaf, -10)
+            else:
+                # Node is fully expanded, so we perform a rollout from its best child to refine scores
+                if leaf.children:
+                    print("stupid else block was triggered, leaf.children:", len(leaf.children))
+                    best_child = max(leaf.children, key=lambda c: c.ucb_value(self.uct_c))
+                    reward = self._rollout(best_child)
+                    self._backpropagate(best_child, reward)
         
-        print(f"Search completed. Total successful expansions: {successful_expansions}, Failed: {failed_expansions}")
-        # Find best path to goal or closest node
-        best_node = self.find_best_path()
-        return best_node
-    
-    def find_best_path(self) -> Optional[MCTSNode]:
+        # Return best path found
+        return self._extract_path()
+
+    def _progressive_widening_limit(self, node: MCTSNode) -> int:
+        """Calculate the maximum number of children for progressive widening"""
+        if node.visits == 0:
+            return 1 # Allow at least one child for a new node
+        return int(self.k * (node.visits ** self.alpha))
+
+    def _select(self, node: MCTSNode) -> MCTSNode:
         """
-        Find the best path from root by following highest value nodes.
-        
-        Returns:
-            MCTSNode: Best terminal node found
+        Selection phase - traverse tree using UCB until a node that is not fully 
+        expanded is found.
         """
-        def find_best_leaf(node):
-            if not node.children:
-                return node
+        current_node = node
+        
+        while not current_node.is_terminal:
+            max_children = self._progressive_widening_limit(current_node)
             
-            # Find child with best average reward
-            best_child = max(node.children, 
-                           key=lambda child: child.total_reward / child.visits if child.visits > 0 else 0)
-            return find_best_leaf(best_child)
-        
-        return find_best_leaf(self.root)
-    
-    def find_closest_node_to_goal(self) -> Optional[MCTSNode]:
-        """
-        Find the node in the tree closest to the goal.
-        
-        Returns:
-            MCTSNode: Closest node to goal
-        """
-        def traverse_tree(node):
-            nodes = [node]
-            for child in node.children:
-                nodes.extend(traverse_tree(child))
-            return nodes
-        
-        all_nodes = traverse_tree(self.root)
-        if not all_nodes:
-            return None
-        
-        closest_node = min(all_nodes, 
-                          key=lambda node: np.linalg.norm(node.position - self.goal_pos))
-        return closest_node
-    
-    def extract_path(self, leaf_node: MCTSNode) -> List[MCTSNode]:
-        """
-        Extract path from root to given leaf node.
-        
-        Args:
-            leaf_node (MCTSNode): Target leaf node
+            # If the node is not fully expanded, we've found our target for expansion
+            if current_node.is_expandable(max_children):
+                return current_node
             
-        Returns:
-            List[MCTSNode]: Path from root to leaf
-        """
-        path = []
-        current = leaf_node
+            # If the node is fully expanded but has no children, it's a dead end.
+            # This can happen if max_children is 0 for a visited node. Return it.
+            if not current_node.children:
+                return current_node
+
+            # Node is fully expanded, so use UCB to select the best child and continue descending
+            best_child = max(current_node.children, 
+                             key=lambda child: child.ucb_value(self.uct_c))
+            current_node = best_child
+            
+        return current_node
+
+    def _expand(self, node: MCTSNode) -> Optional[MCTSNode]:
+        """Expansion phase - add new child to the tree"""
+        # Debugging counters
+        bounds_failures = 0
+        collision_failures = 0
         
+        # Try multiple times to find a valid expansion
+        for attempt in range(500):
+            # Sample a random action (acceleration)
+            action = self._sample_action(node.position, node.velocity)
+            
+            # Integrate dynamics to get new state
+            new_pos, new_vel, new_acc = self._integrate(node, action)
+            
+            # Check if new state is valid
+            if not self._in_bounds(new_pos):
+                bounds_failures += 1
+                continue
+            
+            if not self._line_collision_free(node.position, new_pos):
+                collision_failures += 1
+                continue
+            
+            # Create new child node
+            child = MCTSNode(new_pos, new_vel, new_acc, parent=node, action=action)
+            
+            # Check if child reaches goal
+            if self._is_goal(child):
+                child.is_terminal = True
+                self.best_goal_node = child
+            
+            # Add child to parent
+            node.add_child(child)
+            return child
+        
+        # Failed to expand after multiple attempts - show debug info
+        # (This part is unchanged)
+        print(f"Expansion failed after 500 attempts:")
+        print(f"  Position: {node.position}")
+        print(f"  Velocity: {node.velocity} (magnitude: {np.linalg.norm(node.velocity):.2f})")
+        print(f"  Bounds failures: {bounds_failures}/500")
+        print(f"  Collision failures: {collision_failures}/500")
+        print(f"  Course bounds: width={self.course.width}, height={self.course.height}")
+        print(f"  Parameters: dt={self.dt}, vmax={self.vmax}, amax={self.amax}")
+        
+        return None
+
+    def _rollout(self, node: MCTSNode) -> float:
+        """Rollout phase - simulate random actions to estimate node value"""
+        if node.is_terminal:
+            return self.reward_goal
+        
+        current_pos = node.position.copy()
+        current_vel = node.velocity.copy()
+        current_acc = node.acceleration.copy()
+        
+        total_reward = 0.0
+        
+        for step in range(self.rollout_horizon):
+            # Sample random action
+            action = self._sample_action(node.position, node.velocity)
+            
+            # Integrate one step
+            next_pos, next_vel, next_acc = self._integrate_state(current_pos, current_vel, current_acc, action)
+            
+            # Check for collision
+            if not self._in_bounds(next_pos) or not self._line_collision_free(current_pos, next_pos):
+                return total_reward + self.reward_collision
+            
+            # Check for goal
+            if np.linalg.norm(next_pos - self.goal_pos) <= self.goal_tolerance:
+                return total_reward + self.reward_goal
+            
+            # Small reward for progress
+            progress = np.linalg.norm(current_pos - self.goal_pos) - np.linalg.norm(next_pos - self.goal_pos)
+            total_reward += progress * self.reward_progress
+            
+            # Update state
+            current_pos = next_pos
+            current_vel = next_vel
+            current_acc = next_acc
+        
+        return total_reward
+
+    def _backpropagate(self, node: MCTSNode, reward: float):
+        """Backpropagation phase - update statistics up the tree"""
+        current = node
         while current is not None:
-            path.append(current)
+            current.update(reward)
+            current = current.parent #set current to its parent
+
+    def _sample_action(self, position: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+        """
+        Sample an action with goal biasing and boundary avoidance heuristics.
+        """
+        # 1. Goal Biasing: With a certain probability, move directly towards the goal.
+        if random.random() < self.goal_bias_expand:
+            direction_to_goal = self.goal_pos - position
+            norm = np.linalg.norm(direction_to_goal)
+            if norm > 1e-6:
+                action = direction_to_goal / norm * self.amax
+                return action
+
+        # 2. Random Sampling with Boundary Avoidance
+        ax = random.uniform(self.amin, self.amax)
+        ay = random.uniform(self.amin, self.amax)
+        
+        # Heuristic to force braking when moving towards a nearby wall
+        avoidance_margin = self.vmax * 1.5  # Dynamic margin based on max speed
+        
+        # Avoid right wall
+        if position[0] > self.course.width - avoidance_margin and velocity[0] > 0:
+            ax = self.amin  # Force maximum braking
+            
+        # Avoid left wall
+        if position[0] < avoidance_margin and velocity[0] < 0:
+            ax = self.amax # Force maximum push away from wall
+
+        # Avoid top wall (height)
+        if position[1] > self.course.height - avoidance_margin and velocity[1] > 0:
+            ay = self.amin  # Force maximum braking
+
+        # Avoid bottom wall
+        if position[1] < avoidance_margin and velocity[1] < 0:
+            ay = self.amax # Force maximum push away from wall
+        
+        action = np.array([ax, ay])
+        
+        # Ensure action magnitude doesn't exceed amax
+        action_mag = np.linalg.norm(action)
+        if action_mag > self.amax:
+            action = action * (self.amax / action_mag)
+        
+        return action
+
+    def _integrate(self, node: MCTSNode, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Integrate dynamics to get next state"""
+        return self._integrate_state(node.position, node.velocity, node.acceleration, action)
+
+    def _integrate_state(self, pos: np.ndarray, vel: np.ndarray, acc: np.ndarray, 
+                         action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Integrate dynamics from given state"""
+        # New acceleration is the action
+        new_acc = action.copy()
+        
+        # Update velocity: v = v + a * dt
+        new_vel = vel + new_acc * self.dt
+        
+        # Clamp velocity to maximum
+        vel_mag = np.linalg.norm(new_vel)
+        if vel_mag > self.vmax:
+            new_vel = new_vel * (self.vmax / vel_mag)
+        
+        # Update position: x = x + v * dt + 0.5 * a * dt^2
+        new_pos = pos + vel * self.dt + 0.5 * new_acc * (self.dt ** 2)
+        
+        return new_pos, new_vel, new_acc
+
+    def _in_bounds(self, pos: np.ndarray) -> bool:
+        """Check if position is within course boundaries"""
+        return 0 <= pos[0] <= self.course.width and 0 <= pos[1] <= self.course.height
+
+    def _line_collision_free(self, p0: np.ndarray, p1: np.ndarray) -> bool:
+        """Check if line segment is collision-free"""
+        # Sample points along line segment
+        distance = np.linalg.norm(p1 - p0)
+        if distance == 0:
+            return not self.course.point_in_obstacle(p0[0], p0[1])
+        
+        num_samples = max(2, int(distance / 0.5))
+        for i in range(num_samples + 1):
+            t = i / num_samples
+            point = p0 + t * (p1 - p0)
+            if self.course.point_in_obstacle(point[0], point[1]):
+                return False
+        
+        return True
+
+    def _is_goal(self, node: MCTSNode) -> bool:
+        """Check if node satisfies goal conditions"""
+        pos_close = np.linalg.norm(node.position - self.goal_pos) <= self.goal_tolerance
+        vel_small = np.linalg.norm(node.velocity) <= 1.0  # Small velocity threshold
+        acc_small = np.linalg.norm(node.acceleration) <= 1.0  # Small acceleration threshold
+        return pos_close and vel_small and acc_small
+
+    def _can_direct_connect(self, node: MCTSNode) -> bool:
+        """Check if node can directly connect to goal"""
+        distance = np.linalg.norm(node.position - self.goal_pos)
+        if distance > self.direct_connect_radius:
+            return False
+        
+        return self._line_collision_free(node.position, self.goal_pos)
+
+    def _finalize_direct_connect(self, node: MCTSNode) -> List[Tuple[float, float]]:
+        """Create direct connection to goal and return path"""
+        # Create goal node
+        goal_node = MCTSNode(self.goal_pos, (0.0, 0.0), (0.0, 0.0), parent=node)
+        goal_node.is_terminal = True
+        node.add_child(goal_node)
+        self.best_goal_node = goal_node
+        
+        return self._extract_path()
+
+    def _extract_path(self) -> Optional[List[Tuple[float, float]]]:
+        """Extract path from root to best goal node"""
+        if self.best_goal_node is None:
+            # Find the node closest to goal
+            best_node = self._find_best_node(self.root)
+            if best_node is None:
+                return None
+        else:
+            best_node = self.best_goal_node
+        
+        # Traverse from best node back to root
+        path = []
+        current = best_node
+        while current is not None:
+            path.append((current.position[0], current.position[1]))
             current = current.parent
         
+        # Reverse to get path from start to goal
         path.reverse()
         return path
-    
-    def plan(self) -> Optional[List[MCTSNode]]:
-        """
-        Execute MCTS planning and return path.
-        
-        Returns:
-            List[MCTSNode] or None: Path from start to goal, None if no path found
-        """
-        best_leaf = self.search()
-        
-        if best_leaf is None:
-            print("MCTS: No path found")
+
+    def _find_best_node(self, node: MCTSNode) -> Optional[MCTSNode]:
+        """Find the node closest to goal in the tree using an iterative approach."""
+        if not node:
             return None
-        
-        path = self.extract_path(best_leaf)
-        
-        # Check if goal was actually reached
-        if best_leaf.is_terminal(self.goal_pos, self.goal_tolerance):
-            print(f"MCTS: Goal reached! Path length: {len(path)} nodes")
-        else:
-            final_distance = np.linalg.norm(best_leaf.position - self.goal_pos)
-            print(f"MCTS: Best path found. Final distance to goal: {final_distance:.2f}")
-        
-        return path
 
+        # Use a list as a stack for iterative depth-first search
+        stack = [node]
+        best_node = node
+        best_distance = np.linalg.norm(node.position - self.goal_pos)
 
-def main():
-    """
-    Example usage of MCTS planner.
-    """
-    # Import here to avoid circular imports
-    from obstacle_course.generate_course import ObstacleCourse
-    
-    # Create obstacle course
-    course = ObstacleCourse(100, 200, 15, obstacle_size=12)
-    course.generate_obstacles()
-    course.set_start_and_goal()
-    
-    # Get start and goal from course
-    start_pos = course.start
-    goal_pos = course.goal
-    
-    print(f"Start: {start_pos}, Goal: {goal_pos}")
-    
-    # Debug: Check if start position is valid
-    print(f"Start position in obstacle: {course.point_in_obstacle(start_pos[0], start_pos[1])}")
-    
-    # Debug: Test a few simple moves from start
-    test_node = MCTSNode(start_pos)
-    test_actions = test_node.get_possible_actions(goal_pos)
-    print(f"Number of possible actions: {len(test_actions)}")
-    
-    # Test first few actions
-    for i, action in enumerate(test_actions[:5]):
-        new_pos = np.array(start_pos) + np.array(action)
-        in_bounds = (0 <= new_pos[0] < course.width and 0 <= new_pos[1] < course.height)
-        collision_free = True
-        if in_bounds:
-            collision_free = not course.point_in_obstacle(int(new_pos[0]), int(new_pos[1]))
-        print(f"Action {i}: {action} -> {new_pos}, in_bounds: {in_bounds}, collision_free: {collision_free}")
-    
-    # Create and run MCTS planner
-    mcts_planner = MCTS(
-        start_pos=start_pos,
-        goal_pos=goal_pos,
-        course=course,
-        max_iterations=2000,
-        exploration_param=1.414
-    )
-    
-    # Plan path
-    path = mcts_planner.plan()
-    
-    if path:
-        print(f"MCTS found path with {len(path)} nodes")
+        while stack:
+            current_node = stack.pop()
+            
+            # Check current node's distance
+            distance = np.linalg.norm(current_node.position - self.goal_pos)
+            if distance < best_distance:
+                best_distance = distance
+                best_node = current_node
+            
+            # Add children to the stack to visit them next
+            for child in current_node.children:
+                stack.append(child)
         
-        # Calculate path cost
-        total_cost = 0
-        for i in range(1, len(path)):
-            segment_cost = np.linalg.norm(path[i].position - path[i-1].position)
-            total_cost += segment_cost
-        print(f"Total path cost: {total_cost:.2f}")
-        
-        # Visualization
-        visualizer = CourseVisualizer(figsize=(12, 10))
-        visualizer.plot_obstacles(
-            obstacles=course.obstacles,
-            width=course.width,
-            height=course.height,
-            start=start_pos,
-            goal=goal_pos,
-            title="MCTS Path Planning"
-        )
-        
-        # Plot MCTS tree (sample of nodes for clarity)
-        nodes_to_plot = [mcts_planner.root]
-        queue = [mcts_planner.root]
-        
-        while queue and len(nodes_to_plot) < 500:  # Limit tree visualization
-            node = queue.pop(0)
-            for child in node.children:
-                if child.visits > 5:  # Only plot well-visited nodes
-                    nodes_to_plot.append(child)
-                    queue.append(child)
-        
-        # Plot tree edges
-        for node in nodes_to_plot:
-            if node.parent is not None:
-                x_vals = [node.parent.position[0], node.position[0]]
-                y_vals = [node.parent.position[1], node.position[1]]
-                visualizer.ax.plot(x_vals, y_vals, 'b-', alpha=0.3, linewidth=0.5)
-        
-        # Plot final path
-        path_x = [node.position[0] for node in path]
-        path_y = [node.position[1] for node in path]
-        visualizer.ax.plot(path_x, path_y, 'r-', linewidth=3, label=f'MCTS Path (Cost: {total_cost:.1f})')
-        visualizer.ax.legend()
-        
-        visualizer.show()
-    else:
-        print("No path found")
-
-
-if __name__ == "__main__":
-    main()
+        return best_node

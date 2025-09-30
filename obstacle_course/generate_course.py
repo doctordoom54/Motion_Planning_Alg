@@ -64,20 +64,21 @@ class ObstacleCourse:
                 return True
         return False
 
-    def set_start_and_goal(self, corner_box_size: int = 8):
+    def set_start_and_goal(self, corner_box_size: int = 10, boundary_margin: int = 2):
         """
         Set start and goal points randomly within a small region near the corners, not exactly at the corners, and not inside any obstacle.
         corner_box_size (int): Size of the square region from each corner to sample start/goal.
+        boundary_margin (int): Minimum distance from boundaries to avoid edge issues.
         """
-        # Define corner regions
+        # Define corner regions with boundary margin
         regions = [
-            (0, 0, corner_box_size, corner_box_size),  # bottom-left
-            (self.width - corner_box_size, 0, self.width, corner_box_size),  # bottom-right
-            (0, self.height - corner_box_size, corner_box_size, self.height),  # top-left
-            (self.width - corner_box_size, self.height - corner_box_size, self.width, self.height)  # top-right
+            (boundary_margin, boundary_margin, corner_box_size, corner_box_size),  # bottom-left
+            (self.width - corner_box_size, boundary_margin, self.width - boundary_margin, corner_box_size),  # bottom-right
+            (boundary_margin, self.height - corner_box_size, corner_box_size, self.height - boundary_margin),  # top-left
+            (self.width - corner_box_size, self.height - corner_box_size, self.width - boundary_margin, self.height - boundary_margin)  # top-right
         ]
         # Sample start in one region, goal in another (not the same)
-        max_attempts = 1000
+        max_attempts = 10000 #sample more times to find valid points
         for _ in range(max_attempts):
             start_region = regions[0]
             goal_region = regions[3]
@@ -90,6 +91,33 @@ class ObstacleCourse:
                 self.goal = (gx, gy)
                 return
         raise RuntimeError("Could not find free start and goal points near corners in the give time, run the code again.")
+    
+    def set_start_and_goal_safe(self, boundary_margin: int = 5):
+        """
+        Alternative method: Set start and goal points anywhere in the course, avoiding boundaries and obstacles.
+        boundary_margin (int): Minimum distance from boundaries.
+        """
+        max_attempts = 1000
+        for _ in range(max_attempts):
+            # Sample start point away from boundaries
+            sx = np.random.randint(boundary_margin, self.width - boundary_margin)
+            sy = np.random.randint(boundary_margin, self.height - boundary_margin) 
+            
+            # Sample goal point away from boundaries and far from start
+            gx = np.random.randint(boundary_margin, self.width - boundary_margin)
+            gy = np.random.randint(boundary_margin, self.height - boundary_margin)
+            
+            # Ensure minimum distance between start and goal
+            min_distance = min(self.width, self.height) * 0.3  # At least 30% of course size apart
+            distance = np.sqrt((gx - sx)**2 + (gy - sy)**2)
+            
+            if (not self.point_in_obstacle(sx, sy) and 
+                not self.point_in_obstacle(gx, gy) and 
+                distance >= min_distance):
+                self.start = (sx, sy)
+                self.goal = (gx, gy)
+                return
+        raise RuntimeError("Could not find free start and goal points with safe margins.")
     
     def get_grid(self) -> np.ndarray:
         """Return the course grid."""
