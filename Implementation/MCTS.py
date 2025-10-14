@@ -50,8 +50,8 @@ class MCTSPlanner:
                  max_iterations: int = 5000, rollout_horizon: int = 20, 
                  goal_tolerance: float = 2.0, uct_c: float = 1.4, widen_k: float = 2.0,
                  widen_alpha: float = 0.5, direct_connect_radius: float = 10.0,
-                  goal_bias_expand: float = 0.6,
-                 goal_bias_rollout: float = 0.8, goal_accel_scale: float = 1.0,
+                  
+                 
                  ):
         
         self.course = course
@@ -77,14 +77,14 @@ class MCTSPlanner:
         # Reward structure
         self.reward_goal = 1000
         self.reward_collision = -1000
-        self.reward_progress = 10
+        self.reward_progress = 100
         
         # Direct connection parameters
         self.direct_connect_radius = direct_connect_radius
         
-        # Goal bias parameters (stored but not fully implemented in this basic version)
-        self.goal_bias_expand = goal_bias_expand
-        self.goal_bias_rollout = goal_bias_rollout
+        
+        
+        
         
         # Root node
         self.root = MCTSNode(start_pos, start_vel, start_acc)
@@ -92,7 +92,11 @@ class MCTSPlanner:
 
     def plan(self) -> Optional[List[Tuple[float, float]]]:
         """Main MCTS planning loop"""
-        for _ in range(self.max_iterations):
+        for iteration in range(self.max_iterations):
+            # Print progress every 500 iterations
+            if (iteration + 1) % 10000 == 0:
+                print(f"MCTS Progress: {iteration + 1}/{self.max_iterations} iterations completed")
+            
             # Check terminal condition - direct connect if close to goal
             if self._can_direct_connect(self.root):
                 return self._finalize_direct_connect(self.root)
@@ -166,7 +170,7 @@ class MCTSPlanner:
         collision_failures = 0
         
         # Try multiple times to find a valid expansion
-        for attempt in range(500):
+        for _ in range(500):
             # Sample a random action (acceleration)
             action = self._sample_action(node.position, node.velocity)
             
@@ -196,13 +200,16 @@ class MCTSPlanner:
         
         # Failed to expand after multiple attempts - show debug info
         # (This part is unchanged)
-        print(f"Expansion failed after 500 attempts:")
-        print(f"  Position: {node.position}")
-        print(f"  Velocity: {node.velocity} (magnitude: {np.linalg.norm(node.velocity):.2f})")
-        print(f"  Bounds failures: {bounds_failures}/500")
-        print(f"  Collision failures: {collision_failures}/500")
-        print(f"  Course bounds: width={self.course.width}, height={self.course.height}")
-        print(f"  Parameters: dt={self.dt}, vmax={self.vmax}, amax={self.amax}")
+        
+        #print(f"Expansion failed after 500 attempts:")
+        
+            
+        #print(f"  Position: {node.position}")
+        #print(f"  Velocity: {node.velocity} (magnitude: {np.linalg.norm(node.velocity):.2f})")
+        #print(f"  Bounds failures: {bounds_failures}/500")
+        #print(f"  Collision failures: {collision_failures}/500")
+        #print(f"  Course bounds: width={self.course.width}, height={self.course.height}")
+        #print(f"  Parameters: dt={self.dt}, vmax={self.vmax}, amax={self.amax}")
         
         return None
 
@@ -254,44 +261,28 @@ class MCTSPlanner:
         """
         Sample an action with goal biasing and boundary avoidance heuristics.
         """
-        # 1. Goal Biasing: With a certain probability, move directly towards the goal.
-        if random.random() < self.goal_bias_expand:
-            direction_to_goal = self.goal_pos - position
-            norm = np.linalg.norm(direction_to_goal)
-            if norm > 1e-6:
-                action = direction_to_goal / norm * self.amax
-                return action
+        # Sample magnitude as positive value (0 to amax)
+        # This ensures each direction is distinct and we get uniform distribution
+        magnitude = random.uniform(0, self.amax)
 
-        # 2. Random Sampling with Boundary Avoidance
-        ax = random.uniform(self.amin, self.amax)
-        ay = random.uniform(self.amin, self.amax)
-        
-        # Heuristic to force braking when moving towards a nearby wall
-        avoidance_margin = self.vmax * 1.5  # Dynamic margin based on max speed
-        
-        # Avoid right wall
-        if position[0] > self.course.width - avoidance_margin and velocity[0] > 0:
-            ax = self.amin  # Force maximum braking
-            
-        # Avoid left wall
-        if position[0] < avoidance_margin and velocity[0] < 0:
-            ax = self.amax # Force maximum push away from wall
+        # Define 4 diagonal directions: 45°, 135°, 225°, 315°
+        diagonal_directions = [
+            (1, 1),    # 45°   (northeast)
+            (-1, 1),   # 135°  (northwest)
+            (-1, -1),  # 225°  (southwest)
+            (1, -1)    # 315°  (southeast)
+        ]
 
-        # Avoid top wall (height)
-        if position[1] > self.course.height - avoidance_margin and velocity[1] > 0:
-            ay = self.amin  # Force maximum braking
+        # Randomly select one of the 4 diagonal directions
+        direction = random.choice(diagonal_directions)
 
-        # Avoid bottom wall
-        if position[1] < avoidance_margin and velocity[1] < 0:
-            ay = self.amax # Force maximum push away from wall
-        
+        # Create action where |ax| = |ay| = magnitude
+        # This gives us ax, ay in range [-amax, amax] with |ax| = |ay|
+        ax = direction[0] * magnitude
+        ay = direction[1] * magnitude
+
         action = np.array([ax, ay])
-        
-        # Ensure action magnitude doesn't exceed amax
-        action_mag = np.linalg.norm(action)
-        if action_mag > self.amax:
-            action = action * (self.amax / action_mag)
-        
+
         return action
 
     def _integrate(self, node: MCTSNode, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -346,7 +337,7 @@ class MCTSPlanner:
 
     def _can_direct_connect(self, node: MCTSNode) -> bool:
         """Check if node can directly connect to goal"""
-        distance = np.linalg.norm(node.position - self.goal_pos)
+        distance = np.linalg.norm(node.position - self.goal_pos) #this is only checking for distance. 
         if distance > self.direct_connect_radius:
             return False
         
@@ -355,15 +346,15 @@ class MCTSPlanner:
     def _finalize_direct_connect(self, node: MCTSNode) -> List[Tuple[float, float]]:
         """Create direct connection to goal and return path"""
         # Create goal node
-        goal_node = MCTSNode(self.goal_pos, (0.0, 0.0), (0.0, 0.0), parent=node)
-        goal_node.is_terminal = True
+        goal_node = MCTSNode(self.goal_pos, (0.0, 0.0), (0.0, 0.0), parent=node) # this can result in sudden jerk in dynamics 
+        goal_node.is_terminal = True # need to add a check for velocity diffs as well??? 
         node.add_child(goal_node)
         self.best_goal_node = goal_node
         
         return self._extract_path()
 
     def _extract_path(self) -> Optional[List[Tuple[float, float]]]:
-        """Extract path from root to best goal node"""
+        """Extract path from root to best goal node (positions only for backward compatibility)"""
         if self.best_goal_node is None:
             # Find the node closest to goal
             best_node = self._find_best_node(self.root)
@@ -382,6 +373,38 @@ class MCTSPlanner:
         # Reverse to get path from start to goal
         path.reverse()
         return path
+    
+    def extract_full_trace(self) -> Optional[List[dict]]:
+        """
+        Extract full trace with position, velocity, acceleration, and action at each node.
+        Returns a list of dictionaries with complete state information.
+        """
+        if self.best_goal_node is None:
+            # Find the node closest to goal
+            best_node = self._find_best_node(self.root)
+            if best_node is None:
+                return None
+        else:
+            best_node = self.best_goal_node
+        
+        # Traverse from best node back to root
+        trace = []
+        current = best_node
+        while current is not None:
+            node_info = {
+                'position': current.position.copy(),
+                'velocity': current.velocity.copy(),
+                'acceleration': current.acceleration.copy(),
+                'action': current.action.copy() if current.action is not None else None,
+                'visits': current.visits,
+                'total_reward': current.total_reward
+            }
+            trace.append(node_info)
+            current = current.parent
+        
+        # Reverse to get trace from start to goal
+        trace.reverse()
+        return trace
 
     def _find_best_node(self, node: MCTSNode) -> Optional[MCTSNode]:
         """Find the node closest to goal in the tree using an iterative approach."""

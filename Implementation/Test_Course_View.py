@@ -1,8 +1,5 @@
 import sys
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-
 # Add the parent directory to Python path so we can import from obstacle_course
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

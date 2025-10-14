@@ -64,7 +64,7 @@ class ObstacleCourse:
                 return True
         return False
 
-    def set_start_and_goal(self, corner_box_size: int = 10, boundary_margin: int = 2):
+    def set_start_and_goal(self, corner_box_size: int = 5, boundary_margin: int = 3):
         """
         Set start and goal points randomly within a small region near the corners, not exactly at the corners, and not inside any obstacle.
         corner_box_size (int): Size of the square region from each corner to sample start/goal.
@@ -78,7 +78,7 @@ class ObstacleCourse:
             (self.width - corner_box_size, self.height - corner_box_size, self.width - boundary_margin, self.height - boundary_margin)  # top-right
         ]
         # Sample start in one region, goal in another (not the same)
-        max_attempts = 10000 #sample more times to find valid points
+        max_attempts = int(1e6) #sample more times to find valid points
         for _ in range(max_attempts):
             start_region = regions[0]
             goal_region = regions[3]
