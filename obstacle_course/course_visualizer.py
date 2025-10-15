@@ -28,10 +28,12 @@ class CourseVisualizer:
         if start is not None:
             self.ax.plot(start[0]+0.5, start[1]+0.5, 'go', markersize=10, label='Start',
                         markeredgecolor='white', markeredgewidth=2)
-        # Plot goal point
+        # Plot goal point as a 1-unit radius circle
         if goal is not None:
-            self.ax.plot(goal[0]+0.5, goal[1]+0.5, 'r*', markersize=15, label='Goal',
-                        markeredgecolor='white', markeredgewidth=2)
+            goal_circle = plt.Circle((goal[0], goal[1]), radius=1.0, 
+                                    facecolor='red', alpha=0.5, label='Goal',
+                                    edgecolor='darkred', linewidth=2)
+            self.ax.add_patch(goal_circle)
         if start is not None or goal is not None:
             self.ax.legend(loc='upper right')
         if title:

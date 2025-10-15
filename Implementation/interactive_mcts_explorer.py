@@ -544,7 +544,7 @@ class MCTSAnalyzer:
             height=self.course.height,
             start=self.course.start,
             goal=self.course.goal,
-            title="MCTS Path Planning"
+            title="MCTS Motion Planning"
         )
         
         # Plot all explored paths (MCTS tree) with thin black lines
@@ -671,9 +671,9 @@ def run_mcts_interactive():
     print("="*80)
     
     # Setup obstacle course
-    width = 60
-    height = 60
-    num_obstacles = 8
+    width = 100
+    height = 100
+    num_obstacles = 10
     obstacle_size = 8
 
     course = ObstacleCourse(n=width, m=height, num_obstacles=num_obstacles, obstacle_size=obstacle_size)
@@ -693,17 +693,20 @@ def run_mcts_interactive():
         goal_pos=course.goal,
         start_vel=start_vel,
         start_acc=start_acc,
-        dt=0.4,
-        vmax=35.50,
-        amax=7,
-        amin=-7,
-        goal_tolerance=1,
-        uct_c=np.sqrt(2),
-        widen_k=6,
-        widen_alpha=0.2,
-        rollout_horizon=25,
-        max_iterations=int(1e5),
-        direct_connect_radius=5.0,
+        dt=1.5,  # Reasonable time step
+        vmax=35,  # Much lower max velocity for better control
+        amax=7,  # Higher acceleration for movement
+        amin=-7,  # Symmetric acceleration bounds
+        goal_tolerance=.45, 
+        goal_vel_tolerance= 0.5, # Larger tolerance for easier goal reaching
+        uct_c=np.sqrt(2),  
+        widen_k=2,  # Allow more children per node
+        widen_alpha=0.2,  # Slower growth = more exploration early
+        rollout_horizon=18,  # Shorter horizon to avoid getting stuck
+        max_iterations=int(1e4),  # Reduce for quick testing
+        direct_connect_radius=5.0,  
+         #basic heuristic to accelerate towards goal
+        
         
     )
 

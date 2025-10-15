@@ -48,7 +48,8 @@ class MCTSPlanner:
                  start_acc: Tuple[float, float] = (0.0, 0.0), dt: float = 1.0, 
                  vmax: float = 30.0, amax: float = 15.0, amin: float = 15.0, 
                  max_iterations: int = 5000, rollout_horizon: int = 20, 
-                 goal_tolerance: float = 2.0, uct_c: float = 1.4, widen_k: float = 2.0,
+                 goal_tolerance: float = 2.0, goal_vel_tolerance: float = 0.5,
+                 uct_c: float = 1.4, widen_k: float = 2.0,
                  widen_alpha: float = 0.5, direct_connect_radius: float = 10.0,
                   
                  
@@ -66,6 +67,7 @@ class MCTSPlanner:
         self.max_iterations = max_iterations
         self.rollout_horizon = rollout_horizon
         self.goal_tolerance = goal_tolerance
+        self.goal_vel_tolerance = goal_vel_tolerance  # Velocity must be near zero at goal
         
         # Progressive widening parameters
         self.k = widen_k
@@ -98,11 +100,18 @@ class MCTSPlanner:
                 print(f"MCTS Progress: {iteration + 1}/{self.max_iterations} iterations completed")
             
             # Check terminal condition - direct connect if close to goal
-            if self._can_direct_connect(self.root):
-                return self._finalize_direct_connect(self.root)
+            #if self._can_direct_connect(self.root):
+            #    return self._finalize_direct_connect(self.root)
             
             # 1. Selection phase - traverse tree to find a node to expand
             leaf = self._select(self.root)
+            
+            # Every 100 iterations, check if selected leaf can connect to goal with any feasible action
+            if (iteration + 1) % 50 == 0:
+                
+                if self._can_feasible_connect_to_goal(leaf):
+                    print(f"✓ Direct connection found at iteration {iteration + 1}!")
+                    return self._finalize_feasible_connect(leaf)
             
             # Check terminal condition from selected leaf
             if self._can_direct_connect(leaf):
@@ -329,11 +338,10 @@ class MCTSPlanner:
         return True
 
     def _is_goal(self, node: MCTSNode) -> bool:
-        """Check if node satisfies goal conditions"""
+        """Check if node satisfies goal conditions: position within tolerance AND velocity near zero"""
         pos_close = np.linalg.norm(node.position - self.goal_pos) <= self.goal_tolerance
-        vel_small = np.linalg.norm(node.velocity) <= 1.0  # Small velocity threshold
-        acc_small = np.linalg.norm(node.acceleration) <= 1.0  # Small acceleration threshold
-        return pos_close and vel_small and acc_small
+        vel_small = np.linalg.norm(node.velocity) <= self.goal_vel_tolerance
+        return pos_close and vel_small
 
     def _can_direct_connect(self, node: MCTSNode) -> bool:
         """Check if node can directly connect to goal"""
@@ -344,12 +352,85 @@ class MCTSPlanner:
         return self._line_collision_free(node.position, self.goal_pos)
 
     def _finalize_direct_connect(self, node: MCTSNode) -> List[Tuple[float, float]]:
-        """Create direct connection to goal and return path"""
-        # Create goal node
-        goal_node = MCTSNode(self.goal_pos, (0.0, 0.0), (0.0, 0.0), parent=node) # this can result in sudden jerk in dynamics 
-        goal_node.is_terminal = True # need to add a check for velocity diffs as well??? 
+        """Create direct connection to goal with zero velocity"""
+        # Create goal node with zero velocity and acceleration
+        goal_node = MCTSNode(self.goal_pos, (0.0, 0.0), (0.0, 0.0), parent=node)
+        goal_node.is_terminal = True
         node.add_child(goal_node)
         self.best_goal_node = goal_node
+        
+        return self._extract_path()
+    
+    def _can_feasible_connect_to_goal(self, node: MCTSNode) -> bool:
+        """
+        Check if node can connect to goal with zero final velocity using action within feasible bounds.
+        Requires solving for action that brings robot to goal position with zero velocity.
+        
+        Using kinematic equations:
+        goal_pos = pos + vel*dt + 0.5*action*dt^2
+        0 = vel + action*dt  (final velocity should be zero)
+        
+        From second equation: action = -vel/dt
+        Substituting into first: goal_pos = pos + vel*dt - 0.5*vel*dt = pos + 0.5*vel*dt
+        This only works if goal_pos = pos + 0.5*vel*dt, which is too restrictive.
+        
+        Better approach: Check if we can reach goal with near-zero velocity in one step.
+        """
+        # Calculate action needed to bring velocity to zero
+        # action_to_stop = -vel/dt
+        action_to_stop = -node.velocity / self.dt
+        
+        # Calculate where we'd end up if we apply this action
+        # new_pos = pos + vel*dt + 0.5*action*dt^2
+        final_pos = node.position + node.velocity * self.dt + 0.5 * action_to_stop * (self.dt ** 2)
+        final_vel = node.velocity + action_to_stop * self.dt  # Should be ~0
+        
+        # Check if final position is within goal tolerance
+        distance_to_goal = np.linalg.norm(final_pos - self.goal_pos)
+        if distance_to_goal > self.goal_tolerance:
+            return False
+        
+        # Check if action to stop is within bounds
+        action_magnitude = np.linalg.norm(action_to_stop)
+        max_magnitude = max(abs(self.amin), abs(self.amax))
+        if action_magnitude > max_magnitude:
+            return False
+        
+        # Check if final velocity is small enough
+        if np.linalg.norm(final_vel) > self.goal_vel_tolerance:
+            return False
+        
+        # Check if path to final position is collision-free
+        if not self._line_collision_free(node.position, final_pos):
+            return False
+        
+        return True
+    
+    def _finalize_feasible_connect(self, node: MCTSNode) -> List[Tuple[float, float]]:
+        """
+        Create direct connection to goal with zero final velocity.
+        Uses action that brings velocity to zero.
+        """
+        # Calculate action to bring velocity to zero
+        action_to_stop = -node.velocity / self.dt
+        
+        # Integrate dynamics to get final state
+        final_pos, final_vel, final_acc = self._integrate_state(
+            node.position, node.velocity, node.acceleration, action_to_stop
+        )
+        
+        # Create goal node with near-zero velocity
+        goal_node = MCTSNode(final_pos, final_vel, final_acc, parent=node, action=action_to_stop)
+        goal_node.is_terminal = True
+        node.add_child(goal_node)
+        self.best_goal_node = goal_node
+        
+        # Verify goal conditions
+        distance_to_goal = np.linalg.norm(final_pos - self.goal_pos)
+        final_vel_magnitude = np.linalg.norm(final_vel)
+        print(f"  Final distance to goal: {distance_to_goal:.6f} (tolerance: {self.goal_tolerance})")
+        print(f"  Final velocity magnitude: {final_vel_magnitude:.6f} (tolerance: {self.goal_vel_tolerance})")
+        print(f"  Stopping action: {action_to_stop} (magnitude: {np.linalg.norm(action_to_stop):.3f})")
         
         return self._extract_path()
 

@@ -13,9 +13,9 @@ from MCTS import MCTSPlanner
 
 def main():
     # Parameters for the obstacle course
-    width = 80
-    height = 80
-    num_obstacles = 6
+    width = 100
+    height = 100
+    num_obstacles = 10
     obstacle_size = 10
 
     # Create obstacle course
@@ -37,16 +37,17 @@ def main():
         goal_pos=course.goal,
         start_vel=start_vel,
         start_acc=start_acc,
-        dt=0.5,  # Reasonable time step
+        dt=1.5,  # Reasonable time step
         vmax=35,  # Much lower max velocity for better control
         amax=5,  # Higher acceleration for movement
         amin=-5,  # Symmetric acceleration bounds
-        goal_tolerance=1,  # Larger tolerance for easier goal reaching
+        goal_tolerance=1, 
+        goal_vel_tolerance= 0.5, # Larger tolerance for easier goal reaching
         uct_c=np.sqrt(2),  
-        widen_k=6,  # Allow more children per node
+        widen_k=2,  # Allow more children per node
         widen_alpha=0.2,  # Slower growth = more exploration early
-        rollout_horizon=25,  # Shorter horizon to avoid getting stuck
-        max_iterations=int(1e5),  # Reduce for quick testing
+        rollout_horizon=20,  # Shorter horizon to avoid getting stuck
+        max_iterations=int(4*1e4),  # Reduce for quick testing
         direct_connect_radius=5.0,  
          #basic heuristic to accelerate towards goal
         
@@ -56,7 +57,7 @@ def main():
 
     # Adjust reward scales to not overly punish early collisions
     planner.reward_goal = 100.0
-    planner.reward_collision = -80.0
+    planner.reward_collision = -100.0
     planner.reward_progress = 70
 
     # Run planning
