@@ -135,7 +135,7 @@ def main():
         if path and len(path) > 1:
             px, py = zip(*path)
             visualizer.ax.plot(px, py, 'r-', linewidth=2, label='Best Path', zorder=10)
-            visualizer.ax.legend(loc='upper right')
+            visualizer.ax.legend(loc='upper left')
 
         print("Showing plot...")
         visualizer.show()

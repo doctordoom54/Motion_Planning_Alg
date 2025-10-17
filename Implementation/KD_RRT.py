@@ -51,8 +51,8 @@ class KinodynamicRRT:
         self.goal_node = None
         
         # Control limits
-        self.max_acceleration = 25.0  # Maximum acceleration magnitude
-        self.max_velocity = 100.0     # Maximum velocity magnitude
+        self.max_acceleration = 5.0  # Maximum acceleration magnitude
+        self.max_velocity = 35.0     # Maximum velocity magnitude
         
         # Adapt parameters based on initial conditions
         self._adapt_parameters()
@@ -77,7 +77,7 @@ class KinodynamicRRT:
         # Adapt max iterations based on problem complexity
         problem_scale = np.sqrt(self.course.width * self.course.height)
         if initial_vel_mag > self.max_velocity * 0.5 or problem_scale > 50:
-            self.max_iterations = max(self.max_iterations, 8000)
+            self.max_iterations = max(self.max_iterations, 8000)#TODO change this back to 8000
             print(f"Increased max iterations to {self.max_iterations} for complex initial conditions")
         
     def sample_random_state(self):
@@ -128,7 +128,7 @@ class KinodynamicRRT:
             if target_vel is not None:
                 vel_dist = np.linalg.norm(node.velocity - target_vel)
                 # Weight position more heavily than velocity
-                total_cost = pos_dist + 0.2 * vel_dist #selection of weight?
+                total_cost = pos_dist + 0.2 * vel_dist #selection of weight? comprehensive factor for vel
             else:
                 total_cost = pos_dist
             

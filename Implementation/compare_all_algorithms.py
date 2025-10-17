@@ -36,8 +36,8 @@ def run_kd_rrt(course, start_pos, goal_pos):
         goal_pos=goal_pos,
         course=course,
         max_iterations=10000,
-        step_size=0.6,
-        goal_tolerance=5
+        step_size=1.5,
+        goal_tolerance=1
     )
     t0 = time.time()
     path = kd_planner.plan()
@@ -90,30 +90,29 @@ def run_mcts(course, start_pos, goal_pos):
     start_vel = (0, 0.00)
     start_acc = (0.0, 0.0)
     mcts = MCTSPlanner(
-        course=course,
+         course=course,
         start_pos=start_pos,
         goal_pos=goal_pos,
         start_vel=start_vel,
         start_acc=start_acc,
-        dt=1.0,
-        vmax=4.5,
-        amax=8.0,
-        amin=0.0,
-        goal_tolerance=3.0,
-        uct_c=1.2,
-        widen_k=5.0,
-        widen_alpha=0.2,
-        rollout_horizon=20,
-        max_iterations=int(5*1e5), 
-        direct_connect_radius=5.0,
-        goal_bias_expand=0.8,
-        goal_bias_rollout=0.9,
+        dt=1,  # Reasonable time step
+        vmax=35,  # Much lower max velocity for better control
+        amax=5,  # Higher acceleration for movement
+        amin=-5,  # Symmetric acceleration bounds
+        goal_tolerance=1, 
+        goal_vel_tolerance= 0.5, # Larger tolerance for easier goal reaching
+        uct_c=np.sqrt(2),  
+        widen_k=2,  # Allow more children per node
+        widen_alpha=0.2,  # Slower growth = more exploration early
+        rollout_horizon=20,  # Shorter horizon to avoid getting stuck
+        max_iterations=int(4*1e4),  # Reduce for quick testing
+        direct_connect_radius=5.0,  
         
     )
     # Adjust reward scales (matching existing usage)
     mcts.reward_goal = 100.0
     mcts.reward_collision = -100.0
-    mcts.reward_step = 50
+    mcts.reward_progress = 50
 
     t0 = time.time()
     path = mcts.plan()
@@ -214,7 +213,7 @@ def visualize(course, start_pos, goal_pos, results):
 
 def main():
     # Single random course for all algorithms
-    course = ObstacleCourse(50, 50, 6, obstacle_size=8)
+    course = ObstacleCourse(100, 100, 10, obstacle_size=10)
     course.generate_obstacles()
     course.set_start_and_goal()
 

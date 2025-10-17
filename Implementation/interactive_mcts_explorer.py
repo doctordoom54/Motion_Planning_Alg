@@ -293,7 +293,7 @@ class MCTSAnalyzer:
         axes[1, 0].set_xlabel('Time (s)')
         axes[1, 0].set_ylabel('Velocity')
         axes[1, 0].set_title('Velocity Components over Time')
-        axes[1, 0].legend(loc='upper right')
+        axes[1, 0].legend(loc='upper left')
         axes[1, 0].grid(True, alpha=0.3)
         axes[1, 0].axhline(y=self.planner.vmax, color='orange', linestyle='--', 
                           linewidth=1, label=f'vmax={self.planner.vmax}')
@@ -306,7 +306,7 @@ class MCTSAnalyzer:
         axes[1, 1].set_xlabel('X Position')
         axes[1, 1].set_ylabel('Y Position')
         axes[1, 1].set_title('2D Trajectory')
-        axes[1, 1].legend(loc='upper right')
+        axes[1, 1].legend(loc='upper left')
         axes[1, 1].grid(True, alpha=0.3)
         axes[1, 1].axis('equal')
         
@@ -318,7 +318,7 @@ class MCTSAnalyzer:
         axes[2, 0].set_xlabel('Time (s)')
         axes[2, 0].set_ylabel('Acceleration')
         axes[2, 0].set_title('Acceleration Components over Time')
-        axes[2, 0].legend(loc='upper right')
+        axes[2, 0].legend(loc='upper left')
         axes[2, 0].grid(True, alpha=0.3)
         axes[2, 0].axhline(y=self.planner.amax, color='orange', linestyle='--', 
                           linewidth=1, label=f'amax={self.planner.amax}')
@@ -335,7 +335,7 @@ class MCTSAnalyzer:
             axes[2, 1].set_xlabel('Time (s)')
             axes[2, 1].set_ylabel('Action')
             axes[2, 1].set_title('Actions over Time')
-            axes[2, 1].legend(loc='upper right')
+            axes[2, 1].legend(loc='upper left')
             axes[2, 1].grid(True, alpha=0.3)
         
         plt.suptitle('Best Path Trajectory Analysis', fontsize=16, fontweight='bold')
@@ -500,7 +500,7 @@ class MCTSAnalyzer:
         if self.path and len(self.path) > 1:
             px, py = zip(*self.path)
             ax1.plot(px, py, 'r-', linewidth=2, label='Best Path', zorder=10)
-            ax1.legend(loc='upper right')
+            ax1.legend(loc='upper left')
         
         # Right plot: Best path with visit counts
         visualizer2 = CourseVisualizer(figsize=(10, 10))
@@ -530,7 +530,7 @@ class MCTSAnalyzer:
                     fontsize=8, color='blue',
                     bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7)
                 )
-            ax2.legend(loc='upper right')
+            ax2.legend(loc='upper left')
         
         plt.tight_layout()
         plt.show()
@@ -568,7 +568,7 @@ class MCTSAnalyzer:
         if self.path and len(self.path) > 1:
             px, py = zip(*self.path)
             visualizer.ax.plot(px, py, 'r-', linewidth=2, label='Best Path', zorder=10)
-            visualizer.ax.legend(loc='upper right')
+            visualizer.ax.legend(loc='upper left')
             print(f"Path length: {len(self.path)} nodes")
         else:
             print("No path to plot")
@@ -600,7 +600,7 @@ class MCTSAnalyzer:
         axes[0, 0].set_title(f'Action X-Component Distribution\n(Total: {len(ax_values)} actions)', fontsize=14)
         axes[0, 0].axvline(x=0, color='red', linestyle='--', linewidth=1, label='Zero')
         axes[0, 0].grid(True, alpha=0.3)
-        axes[0, 0].legend(loc='upper right')
+        axes[0, 0].legend(loc='upper left')
         
         # Subplot 2: ay (y-component) histogram
         axes[0, 1].hist(ay_values, bins=bins, range=(range_min, range_max), 
@@ -610,7 +610,7 @@ class MCTSAnalyzer:
         axes[0, 1].set_title(f'Action Y-Component Distribution\n(Total: {len(ay_values)} actions)', fontsize=14)
         axes[0, 1].axvline(x=0, color='red', linestyle='--', linewidth=1, label='Zero')
         axes[0, 1].grid(True, alpha=0.3)
-        axes[0, 1].legend(loc='upper right')
+        axes[0, 1].legend(loc='upper left')
         
         # Subplot 3: Action magnitude histogram
         mag_range_max = np.sqrt(2) * range_max  # Maximum magnitude for diagonal actions
@@ -636,7 +636,7 @@ class MCTSAnalyzer:
         diag_range = np.linspace(range_min, range_max, 100)
         axes[1, 1].plot(diag_range, diag_range, 'b--', linewidth=1, alpha=0.3, label='45°')
         axes[1, 1].plot(diag_range, -diag_range, 'b--', linewidth=1, alpha=0.3, label='135°')
-        axes[1, 1].legend(loc='upper right')
+        axes[1, 1].legend(loc='upper left')
         
         plt.suptitle('MCTS Action Analysis', fontsize=16, fontweight='bold')
         plt.tight_layout()
@@ -698,7 +698,7 @@ def run_mcts_interactive():
         amax=7,  # Higher acceleration for movement
         amin=-7,  # Symmetric acceleration bounds
         goal_tolerance=.45, 
-        goal_vel_tolerance= 0.5, # Larger tolerance for easier goal reaching
+        goal_vel_tolerance= 0.5, 
         uct_c=np.sqrt(2),  
         widen_k=2,  # Allow more children per node
         widen_alpha=0.2,  # Slower growth = more exploration early

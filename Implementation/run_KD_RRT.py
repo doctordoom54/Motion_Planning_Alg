@@ -16,7 +16,7 @@ def main():
     Example usage of the Kinodynamic RRT planner.
     """
     # Create obstacle course
-    course = ObstacleCourse(100,200, 18, obstacle_size=15) #this course will be passed to KD_RRT
+    course = ObstacleCourse(100,100, 10, obstacle_size=10) #this course will be passed to KD_RRT
     course.generate_obstacles()
     course.set_start_and_goal()
     
@@ -25,8 +25,8 @@ def main():
     goal_pos = course.goal
     
     # Set initial velocity and acceleration
-    start_vel = [-0.35, -1.0]  # Start from rest
-    start_acc = [1.0, -1.0]  # No initial acceleration
+    start_vel = [0, 0]  # Start from rest
+    start_acc = [0, 0]  # No initial acceleration
     
     print(f"Start: {start_pos}, Goal: {goal_pos}")
     
@@ -37,13 +37,14 @@ def main():
         start_acc=start_acc,
         goal_pos=goal_pos,
         course=course,
-        max_iterations=10000,
-        step_size=0.6,
-        goal_tolerance=5
+        max_iterations=int(1e4),
+        step_size=1.5,
+        goal_tolerance=1
     )
     
     # output planned path 
     path = planner.plan()
+    
     if path is not None:
         print(f"Planner returned path: {path[2].position, path[2].velocity, path[2].acceleration}")
         total_cost = path[-1].cost
@@ -58,6 +59,13 @@ def main():
             vel_str = f"[{node.velocity[0]:.2f}, {node.velocity[1]:.2f}]"
             acc_str = f"[{node.acceleration[0]:.2f}, {node.acceleration[1]:.2f}]"
             print(f"  Node {i}: pos={pos_str}, vel={vel_str}, acc={acc_str}")
+        
+        # Calculate total action (sum of norm of accelerations)
+        total_action = 0.0
+        for node in path:
+            acc_norm = np.linalg.norm(node.acceleration)
+            total_action += acc_norm
+        print(f"\nTotal Action (sum of acceleration norms): {total_action:.4f}")
     else:
         print("No path found")
     
@@ -88,7 +96,7 @@ def main():
         path_x = [node.position[0] for node in path]
         path_y = [node.position[1] for node in path]
         plt.plot(path_x, path_y, 'r-', linewidth=3, label='Path')
-        plt.legend()
+        plt.legend(loc='upper left')
     
     plt.grid(True, alpha=0.3)
     plt.title('Kinodynamic RRT Planning')
