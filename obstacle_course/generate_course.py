@@ -64,60 +64,118 @@ class ObstacleCourse:
                 return True
         return False
 
-    def set_start_and_goal(self, corner_box_size: int = 5, boundary_margin: int = 3):
+    def set_start_and_goal(self, corner_box_size: int = 5, boundary_margin: int = 3, max_attempts: int = int(1e6)):
         """
         Set start and goal points randomly within a small region near the corners, not exactly at the corners, and not inside any obstacle.
-        corner_box_size (int): Size of the square region from each corner to sample start/goal.
-        boundary_margin (int): Minimum distance from boundaries to avoid edge issues.
+        If start/goal cannot be found, reduces obstacle size and count by half and regenerates obstacles.
+        
+        Args:
+            corner_box_size (int): Size of the square region from each corner to sample start/goal.
+            boundary_margin (int): Minimum distance from boundaries to avoid edge issues.
+            max_attempts (int): Maximum attempts to find valid start/goal before reducing obstacles.
         """
-        # Define corner regions with boundary margin
-        regions = [
-            (boundary_margin, boundary_margin, corner_box_size, corner_box_size),  # bottom-left
-            (self.width - corner_box_size, boundary_margin, self.width - boundary_margin, corner_box_size),  # bottom-right
-            (boundary_margin, self.height - corner_box_size, corner_box_size, self.height - boundary_margin),  # top-left
-            (self.width - corner_box_size, self.height - corner_box_size, self.width - boundary_margin, self.height - boundary_margin)  # top-right
-        ]
-        # Sample start in one region, goal in another (not the same)
-        max_attempts = int(1e6) #sample more times to find valid points
-        for _ in range(max_attempts):
-            start_region = regions[0]
-            goal_region = regions[3]
-            sx = np.random.randint(start_region[0], start_region[2])
-            sy = np.random.randint(start_region[1], start_region[3])
-            gx = np.random.randint(goal_region[0], goal_region[2])
-            gy = np.random.randint(goal_region[1], goal_region[3])
-            if not self.point_in_obstacle(sx, sy) and not self.point_in_obstacle(gx, gy) and (sx, sy) != (gx, gy):
-                self.start = (sx, sy)
-                self.goal = (gx, gy)
-                return
-        raise RuntimeError("Could not find free start and goal points near corners in the give time, run the code again.")
+        retry_count = 0
+        max_retries = 10  # Prevent infinite loop
+        
+        while retry_count < max_retries:
+            # Define corner regions with boundary margin
+            regions = [
+                (boundary_margin, boundary_margin, corner_box_size, corner_box_size),  # bottom-left
+                (self.width - corner_box_size, boundary_margin, self.width - boundary_margin, corner_box_size),  # bottom-right
+                (boundary_margin, self.height - corner_box_size, corner_box_size, self.height - boundary_margin),  # top-left
+                (self.width - corner_box_size, self.height - corner_box_size, self.width - boundary_margin, self.height - boundary_margin)  # top-right
+            ]
+            
+            # Try to find valid start and goal
+            for _ in range(max_attempts):
+                start_region = regions[0]
+                goal_region = regions[3]
+                sx = np.random.randint(start_region[0], start_region[2])
+                sy = np.random.randint(start_region[1], start_region[3])
+                gx = np.random.randint(goal_region[0], goal_region[2])
+                gy = np.random.randint(goal_region[1], goal_region[3])
+                if not self.point_in_obstacle(sx, sy) and not self.point_in_obstacle(gx, gy) and (sx, sy) != (gx, gy):
+                    self.start = (sx, sy)
+                    self.goal = (gx, gy)
+                    if retry_count > 0:
+                        print(f"Successfully found start/goal after {retry_count} retries with reduced obstacles")
+                    return
+            
+            # If we couldn't find valid start/goal, reduce obstacles and try again
+            retry_count += 1
+            print(f"Retry {retry_count}: Could not find valid start/goal. Reducing obstacles...")
+            
+            # Halve obstacle size and count
+            new_obstacle_size = max(1, self.obstacle_size // 2)
+            new_num_obstacles = max(1, self.num_obstacles // 2)
+            
+            print(f"  Reducing obstacle_size: {self.obstacle_size} -> {new_obstacle_size}")
+            print(f"  Reducing num_obstacles: {self.num_obstacles} -> {new_num_obstacles}")
+            
+            self.obstacle_size = new_obstacle_size
+            self.num_obstacles = new_num_obstacles
+            
+            # Clear and regenerate obstacles with new parameters
+            self.obstacles = []
+            self.generate_obstacles()
+        
+        raise RuntimeError(f"Could not find free start and goal points near corners after {max_retries} retries with obstacle reduction.")
     
-    def set_start_and_goal_safe(self, boundary_margin: int = 5):
+    def set_start_and_goal_safe(self, boundary_margin: int = 5, max_attempts: int = 1000):
         """
         Alternative method: Set start and goal points anywhere in the course, avoiding boundaries and obstacles.
-        boundary_margin (int): Minimum distance from boundaries.
+        If start/goal cannot be found, reduces obstacle size and count by half and regenerates obstacles.
+        
+        Args:
+            boundary_margin (int): Minimum distance from boundaries.
+            max_attempts (int): Maximum attempts to find valid start/goal before reducing obstacles.
         """
-        max_attempts = 1000
-        for _ in range(max_attempts):
-            # Sample start point away from boundaries
-            sx = np.random.randint(boundary_margin, self.width - boundary_margin)
-            sy = np.random.randint(boundary_margin, self.height - boundary_margin) 
+        retry_count = 0
+        max_retries = 10  # Prevent infinite loop
+        
+        while retry_count < max_retries:
+            # Try to find valid start and goal
+            for _ in range(max_attempts):
+                # Sample start point away from boundaries
+                sx = np.random.randint(boundary_margin, self.width - boundary_margin)
+                sy = np.random.randint(boundary_margin, self.height - boundary_margin) 
+                
+                # Sample goal point away from boundaries and far from start
+                gx = np.random.randint(boundary_margin, self.width - boundary_margin)
+                gy = np.random.randint(boundary_margin, self.height - boundary_margin)
+                
+                # Ensure minimum distance between start and goal
+                min_distance = min(self.width, self.height) * 0.3  # At least 30% of course size apart
+                distance = np.sqrt((gx - sx)**2 + (gy - sy)**2)
+                
+                if (not self.point_in_obstacle(sx, sy) and 
+                    not self.point_in_obstacle(gx, gy) and 
+                    distance >= min_distance):
+                    self.start = (sx, sy)
+                    self.goal = (gx, gy)
+                    if retry_count > 0:
+                        print(f"Successfully found start/goal after {retry_count} retries with reduced obstacles")
+                    return
             
-            # Sample goal point away from boundaries and far from start
-            gx = np.random.randint(boundary_margin, self.width - boundary_margin)
-            gy = np.random.randint(boundary_margin, self.height - boundary_margin)
+            # If we couldn't find valid start/goal, reduce obstacles and try again
+            retry_count += 1
+            print(f"Retry {retry_count}: Could not find valid start/goal. Reducing obstacles...")
             
-            # Ensure minimum distance between start and goal
-            min_distance = min(self.width, self.height) * 0.3  # At least 30% of course size apart
-            distance = np.sqrt((gx - sx)**2 + (gy - sy)**2)
+            # Halve obstacle size and count
+            new_obstacle_size = max(1, self.obstacle_size // 2)
+            new_num_obstacles = max(1, self.num_obstacles // 2)
             
-            if (not self.point_in_obstacle(sx, sy) and 
-                not self.point_in_obstacle(gx, gy) and 
-                distance >= min_distance):
-                self.start = (sx, sy)
-                self.goal = (gx, gy)
-                return
-        raise RuntimeError("Could not find free start and goal points with safe margins.")
+            print(f"  Reducing obstacle_size: {self.obstacle_size} -> {new_obstacle_size}")
+            print(f"  Reducing num_obstacles: {self.num_obstacles} -> {new_num_obstacles}")
+            
+            self.obstacle_size = new_obstacle_size
+            self.num_obstacles = new_num_obstacles
+            
+            # Clear and regenerate obstacles with new parameters
+            self.obstacles = []
+            self.generate_obstacles()
+        
+        raise RuntimeError(f"Could not find free start and goal points with safe margins after {max_retries} retries with obstacle reduction.")
     
     def get_grid(self) -> np.ndarray:
         """Return the course grid."""

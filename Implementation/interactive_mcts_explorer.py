@@ -693,17 +693,17 @@ def run_mcts_interactive():
         goal_pos=course.goal,
         start_vel=start_vel,
         start_acc=start_acc,
-        dt=1.5,  # Reasonable time step
+        dt=1,  # Reasonable time step
         vmax=35,  # Much lower max velocity for better control
-        amax=7,  # Higher acceleration for movement
-        amin=-7,  # Symmetric acceleration bounds
-        goal_tolerance=.45, 
+        amax=5,  # Higher acceleration for movement
+        amin=-5,  # Symmetric acceleration bounds
+        goal_tolerance=.5, 
         goal_vel_tolerance= 0.5, 
         uct_c=np.sqrt(2),  
         widen_k=2,  # Allow more children per node
         widen_alpha=0.2,  # Slower growth = more exploration early
         rollout_horizon=18,  # Shorter horizon to avoid getting stuck
-        max_iterations=int(1e4),  # Reduce for quick testing
+        max_iterations=int(4*1e4),  # Reduce for quick testing
         direct_connect_radius=5.0,  
          #basic heuristic to accelerate towards goal
         

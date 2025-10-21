@@ -37,7 +37,7 @@ def main():
         goal_pos=course.goal,
         start_vel=start_vel,
         start_acc=start_acc,
-        dt=1.5,  # Reasonable time step
+        dt=1,  # Reasonable time step
         vmax=35,  # Much lower max velocity for better control
         amax=5,  # Higher acceleration for movement
         amin=-5,  # Symmetric acceleration bounds

@@ -114,8 +114,8 @@ class MCTSPlanner:
                     return self._finalize_feasible_connect(leaf)
             
             # Check terminal condition from selected leaf
-            if self._can_direct_connect(leaf):
-                return self._finalize_direct_connect(leaf)
+            #if self._can_direct_connect(leaf):
+            #   return self._finalize_direct_connect(leaf)
             
             # 2. Expansion phase - add new child if not fully expanded
             max_children = self._progressive_widening_limit(leaf)
@@ -378,7 +378,19 @@ class MCTSPlanner:
         """
         # Calculate action needed to bring velocity to zero
         # action_to_stop = -vel/dt
-        action_to_stop = -node.velocity / self.dt
+        if not self._line_collision_free(node.position, self.goal_pos):
+            return False
+        
+        action_togo = 2*(self.goal_pos - node.position - node.velocity * self.dt)/(self.dt ** 2)
+
+        final_v = node.velocity + action_togo * self.dt
+
+        if np.linalg.norm(final_v) > abs(self.vmax) or np.linalg.norm(action_togo) > abs(self.amax):
+            return False
+        else:
+            return True
+
+        action_to_stop = - node.velocity / self.dt
         
         # Calculate where we'd end up if we apply this action
         # new_pos = pos + vel*dt + 0.5*action*dt^2
@@ -397,12 +409,11 @@ class MCTSPlanner:
             return False
         
         # Check if final velocity is small enough
-        if np.linalg.norm(final_vel) > self.goal_vel_tolerance:
-            return False
+        #if np.linalg.norm(final_vel) > self.goal_vel_tolerance:
+        #    return False
         
         # Check if path to final position is collision-free
-        if not self._line_collision_free(node.position, final_pos):
-            return False
+
         
         return True
     
@@ -412,15 +423,15 @@ class MCTSPlanner:
         Uses action that brings velocity to zero.
         """
         # Calculate action to bring velocity to zero
-        action_to_stop = -node.velocity / self.dt
-        
+        #action_to_stop = -node.velocity / self.dt
+        action_togo = 2*(self.goal_pos - node.position - node.velocity * self.dt)/(self.dt ** 2)
         # Integrate dynamics to get final state
         final_pos, final_vel, final_acc = self._integrate_state(
-            node.position, node.velocity, node.acceleration, action_to_stop
+            node.position, node.velocity, node.acceleration, action_togo
         )
         
         # Create goal node with near-zero velocity
-        goal_node = MCTSNode(final_pos, final_vel, final_acc, parent=node, action=action_to_stop)
+        goal_node = MCTSNode(final_pos, final_vel, final_acc, parent=node, action=action_togo)
         goal_node.is_terminal = True
         node.add_child(goal_node)
         self.best_goal_node = goal_node
@@ -430,7 +441,7 @@ class MCTSPlanner:
         final_vel_magnitude = np.linalg.norm(final_vel)
         print(f"  Final distance to goal: {distance_to_goal:.6f} (tolerance: {self.goal_tolerance})")
         print(f"  Final velocity magnitude: {final_vel_magnitude:.6f} (tolerance: {self.goal_vel_tolerance})")
-        print(f"  Stopping action: {action_to_stop} (magnitude: {np.linalg.norm(action_to_stop):.3f})")
+        print(f"  Stopping action: {action_togo} (magnitude: {np.linalg.norm(action_togo):.3f})")
         
         return self._extract_path()
 

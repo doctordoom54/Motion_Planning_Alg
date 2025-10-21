@@ -246,7 +246,7 @@ def analyze_monte_carlo_results(num_trials):
 
 if __name__ == '__main__':
     # Run analysis with desired number of trials
-    NUM_TRIALS = 5
+    NUM_TRIALS = 35
     
     df = analyze_monte_carlo_results(num_trials=NUM_TRIALS)
 

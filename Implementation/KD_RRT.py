@@ -128,7 +128,7 @@ class KinodynamicRRT:
             if target_vel is not None:
                 vel_dist = np.linalg.norm(node.velocity - target_vel)
                 # Weight position more heavily than velocity
-                total_cost = pos_dist + 0.2 * vel_dist #selection of weight? comprehensive factor for vel
+                total_cost = pos_dist + vel_dist * self.step_size #selection of weight? comprehensive factor for vel
             else:
                 total_cost = pos_dist
             
@@ -137,6 +137,83 @@ class KinodynamicRRT:
                 nearest_node = node
                 
         return nearest_node
+    
+    def find_nearest_node_by_position(self, target_pos):
+        """
+        Find the nearest node in the tree considering only position (ignoring velocity).
+        
+        Args:
+            target_pos (np.array): Target position [x, y]
+            
+        Returns:
+            KNode: Nearest node in the tree by position only
+        """
+        min_dist = float('inf')
+        nearest_node = None
+        
+        for node in self.nodes:
+            pos_dist = np.linalg.norm(node.position - target_pos)
+            
+            if pos_dist < min_dist:
+                min_dist = pos_dist
+                nearest_node = node
+                
+        return nearest_node
+    
+    def try_connect_to_goal(self, from_node):
+        """
+        Try to connect a node directly to the goal by calculating required action.
+        Checks if action is within bounds, collision-free, and final velocity is valid.
+        
+        Args:
+            from_node (KNode): Starting node to connect from
+            
+        Returns:
+            KNode or None: Goal node if connection successful, None otherwise
+        """
+        # Calculate required displacement
+        displacement = self.goal_pos - from_node.position
+        distance = np.linalg.norm(displacement)
+        
+        if distance < 1e-6: #can we change this to 1? 
+            # this is already goal
+            if np.linalg.norm(from_node.velocity) <= self.max_velocity:
+                goal_node = KNode(self.goal_pos, from_node.velocity, np.array([0.0, 0.0]), parent=from_node)
+                return goal_node
+            return None
+        
+        # Calculate required acceleration to reach goal in one step
+        # Using kinematic equation: s = v0*t + 0.5*a*t^2
+        # And: v_final = v0 + a*t
+        # Where t = step_size
+        t = self.step_size
+        v0 = from_node.velocity
+        
+        # Solve for acceleration: a = 2*(s - v0*t) / t^2
+        required_acc = 2.0 * (displacement - v0 * t) / (t * t)
+        
+        # Check if required acceleration is within bounds
+        acc_mag = np.linalg.norm(required_acc)
+        if acc_mag > self.max_acceleration:
+            return None  # Action exceeds max acceleration
+        
+        # Calculate final velocity
+        final_velocity = v0 + required_acc * t
+        final_vel_mag = np.linalg.norm(final_velocity)
+        
+        # Check if final velocity is within bounds
+        if final_vel_mag > self.max_velocity:
+            return None  # Final velocity exceeds max velocity
+        
+        # Check for collision along the path
+        if not self.check_collision(from_node.position, self.goal_pos):
+            return None  # Collision detected
+        
+        # All checks passed - create goal node
+        goal_node = KNode(self.goal_pos, final_velocity, required_acc, parent=from_node)
+        goal_node.cost = from_node.cost + distance
+        
+        return goal_node
     
     def integrate_dynamics(self, node, control_acc, time_step):
         """
@@ -334,46 +411,41 @@ class KinodynamicRRT:
             if iteration % 100 == 0: #print every 100 iterations 
                 print(f"Iteration {iteration}/{self.max_iterations}")
             
-            # Every 10th iteration, try to connect directly to goal
-            if iteration % 10 == 0:
-                rand_pos = self.goal_pos
-                rand_vel = np.array([0.0, 0.0])  # zero target velocity at goal
-            else:
-                # Sample random state
-                rand_pos, rand_vel = self.sample_random_state()
+            # Every 10th iteration, try to connect closest node to goal directly
+            if iteration % 10 == 0 and iteration > 0:
+                # Find closest node by position only (any velocity)
+                closest_node = self.find_nearest_node_by_position(self.goal_pos)
+                
+                # Try to connect this node to goal
+                goal_node = self.try_connect_to_goal(closest_node)
+                
+                if goal_node is not None:
+                    # Successfully connected to goal!
+                    self.nodes.append(goal_node)
+                    self.goal_node = goal_node
+                    print(f"Goal reached directly in {iteration + 1} iterations!")
+                    print(f"Connected from node at {closest_node.position} with velocity {closest_node.velocity}")
+                    print(f"Final velocity at goal: {goal_node.velocity}")
+                    return self.extract_path()
             
-            # Find nearest node (considering velocity when available)
-            if iteration % 10 == 0:
-                nearest_node = self.find_nearest_node(rand_pos, rand_vel) 
-                #when this is called, the rand vel is zero for find nearest node
-                #kind of confusing to name the variable same when they are only triggered as a group
-            else:
-                nearest_node = self.find_nearest_node(rand_pos, rand_vel)
+            # Sample random state
+            rand_pos, rand_vel = self.sample_random_state()
             
-            # Steer towards random position (or goal with for every 10 itereations or try at least)
-            if iteration % 10 == 0:  # Goal-directed iteration
-                new_node = self.steer_to_goal_with_stop(nearest_node, rand_pos)
-            else:
-                new_node = self.steer(nearest_node, rand_pos)
+            # Find nearest node (considering velocity)
+            nearest_node = self.find_nearest_node(rand_pos, rand_vel)
+            
+            # Steer towards random position
+            new_node = self.steer(nearest_node, rand_pos)
             
             if new_node is None:
                 continue
             
-            # Check collision, this will fail for most of the times early on when
-            #the algorithm is trying to reach the goal which is far away from the current state
+            # Check collision
             if not self.check_collision(nearest_node.position, new_node.position):
                 continue
             
             # Add node to tree
             self.nodes.append(new_node)
-            
-            # Check if this is a direct connection to goal
-            if np.linalg.norm(rand_pos - self.goal_pos) < 1e-6:  # We were trying to reach goal
-                if np.linalg.norm(new_node.position - self.goal_pos) <= self.goal_tolerance:
-                    new_node.position = self.goal_pos  # Snap to exact goal position
-                    self.goal_node = new_node
-                    print(f"Goal reached directly in {iteration + 1} iterations!")
-                    return self.extract_path()
             
             # Check if goal is reached
             if self.is_goal_reached(new_node):
@@ -383,8 +455,7 @@ class KinodynamicRRT:
                 if goal_node is not None and self.check_collision(new_node.position, goal_node.position):
                     # Successfully connected to goal
                     goal_node.position = self.goal_pos  # Ensure exact goal position
-                    goal_node.velocity = np.array([0.0, 0.0])  # Zero velocity at goal
-                    goal_node.acceleration = np.array([0.0, 0.0])  # Zero acceleration at goal
+                    # Keep the velocity and acceleration as calculated by steer_to_goal_with_stop
                     self.nodes.append(goal_node)
                     self.goal_node = goal_node
                     print(f"Goal reached in {iteration + 1} iterations!")
@@ -417,22 +488,8 @@ class KinodynamicRRT:
         
         path.reverse()
         
-        # Ensure the last node is exactly at the goal position with zero velocity
-        if len(path) > 0:
-            last_node = path[-1]
-            if np.linalg.norm(last_node.position - self.goal_pos) > 1e-6:
-                # Create a final node exactly at the goal
-                final_node = KNode(
-                    position=self.goal_pos.copy(),
-                    velocity=np.array([0.0, 0.0]),      # Zero velocity at goal
-                    acceleration=np.array([0.0, 0.0]), # Zero acceleration at goal
-                    parent=last_node
-                )
-                path.append(final_node)
-            else:
-                # Already at goal position, but ensure zero velocity
-                last_node.velocity = np.array([0.0, 0.0])
-                last_node.acceleration = np.array([0.0, 0.0])
+        # Don't modify the final node - it should have the velocity/acceleration
+        # that resulted from the physics-based connection
         
         return path
     
